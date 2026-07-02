@@ -91,9 +91,8 @@ namespace JiePinPai.Navisworks
                 Dock = DockStyle.Fill,
                 Padding = new Point(12, 6),
                 Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-                SizeMode = TabSizeMode.Fixed,
+                SizeMode = TabSizeMode.Normal,
             };
-            _tabControl.ItemSize = CalculateTabItemSize(_tabControl.Font);
 
             // ========== 选项卡 1：搜索条件 ==========
             _tabConditions = new TabPage("搜索条件");
@@ -120,12 +119,13 @@ namespace JiePinPai.Navisworks
                 BackColor = System.Drawing.Color.FromArgb(240, 241, 242),
             };
 
+            var btnFont = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
+            var btnHeight = CalculateButtonHeight(btnFont) - ScaleLogical(4);
+
             _btnSearch = new Button
             {
                 Text = "执行搜索",
-                Size = new Size(
-                    ScaleLogical(108),
-                    CalculateButtonHeight(new Font("Microsoft YaHei", 10F, FontStyle.Bold)) - ScaleLogical(4)),
+                Size = new Size(ScaleLogical(108), btnHeight),
                 Location = new Point(ScaleLogical(8), ScaleLogical(6)),
                 BackColor = System.Drawing.Color.FromArgb(52, 152, 219),
                 ForeColor = System.Drawing.Color.White,
@@ -135,7 +135,7 @@ namespace JiePinPai.Navisworks
                     BorderSize = 0,
                     MouseOverBackColor = System.Drawing.Color.FromArgb(41, 128, 185),
                 },
-                Font = new Font("Microsoft YaHei", 10F, FontStyle.Bold),
+                Font = btnFont,
                 UseVisualStyleBackColor = false,
             };
             _btnSearch.Click += BtnSearch_Click;
@@ -143,10 +143,7 @@ namespace JiePinPai.Navisworks
             _btnExportResults = new Button
             {
                 Text = "导出结果",
-                Size = new Size(
-                    ScaleLogical(90),
-                    CalculateButtonHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Bold)) - ScaleLogical(4)),
-                Location = new Point(ScaleLogical(136), ScaleLogical(6)),
+                Size = new Size(ScaleLogical(90), btnHeight),
                 FlatStyle = FlatStyle.Flat,
                 FlatAppearance =
                 {
@@ -156,18 +153,20 @@ namespace JiePinPai.Navisworks
                 },
                 BackColor = System.Drawing.Color.FromArgb(248, 249, 250),
                 ForeColor = System.Drawing.Color.FromArgb(44, 62, 80),
-                Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+                Font = btnFont,
                 UseVisualStyleBackColor = false,
                 Enabled = false,
             };
             _btnExportResults.Click += BtnExportResults_Click;
+            _btnExportResults.Location = new Point(
+                _btnSearch.Right + ScaleLogical(8),
+                _btnSearch.Top);
 
             _btnClose = new Button
             {
                 Text = "关闭",
-                Size = new Size(
-                    ScaleLogical(72),
-                    CalculateButtonHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Bold)) - ScaleLogical(4)),
+                Size = new Size(ScaleLogical(72), btnHeight),
+                Location = new Point(0, _btnSearch.Top),
                 FlatStyle = FlatStyle.Flat,
                 FlatAppearance =
                 {
@@ -177,25 +176,19 @@ namespace JiePinPai.Navisworks
                 },
                 BackColor = System.Drawing.Color.FromArgb(248, 249, 250),
                 ForeColor = System.Drawing.Color.FromArgb(44, 62, 80),
-                Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+                Font = btnFont,
                 UseVisualStyleBackColor = false,
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 DialogResult = DialogResult.Cancel,
             };
-            // 关闭按钮右对齐
-            _btnClose.Left = bottomPanel.ClientSize.Width - _btnClose.Width - 8;
-
-            _btnExportResults.Left = _btnSearch.Right + 8;
 
             bottomPanel.Controls.Add(_btnSearch);
             bottomPanel.Controls.Add(_btnExportResults);
             bottomPanel.Controls.Add(_btnClose);
 
-            // 窗口大小变化时重新定位关闭按钮
-            bottomPanel.Resize += (s, e) =>
-            {
-                _btnClose.Left = bottomPanel.ClientSize.Width - _btnClose.Width - 8;
-            };
+            // 关闭按钮始终贴在面板右边缘，其余按钮靠左
+            void RepositionClose() =>
+                _btnClose.Left = bottomPanel.ClientSize.Width - _btnClose.Width - ScaleLogical(10);
+            bottomPanel.Resize += (s, e) => RepositionClose();
 
             // ── 主布局 ──
             this.Controls.Add(_tabControl);
@@ -265,11 +258,6 @@ namespace JiePinPai.Navisworks
         private static int CalculateToolbarHeight(Control sampleButton, Padding padding)
         {
             return sampleButton.Height + sampleButton.Margin.Vertical + padding.Vertical;
-        }
-
-        private static Size CalculateTabItemSize(Font font)
-        {
-            return new Size(ScaleLogical(96), MeasureTextHeight(font) + ScaleLogical(12));
         }
 
         private static int CalculateContentHeight(Font font, int lineCount, int logicalVerticalPadding)
@@ -399,25 +387,20 @@ namespace JiePinPai.Navisworks
 
             _chkHideAfterSearch = new CheckBox
             {
-                Text = "搜索完成后询问是否隐藏未选中对象",
-                Location = new Point(20, 20),
-                Size = new Size(350, CalculateContentHeight(this.Font, 1, 6)),
-                Checked = true,
+                Text = "模式 B：查找并选中后，弹窗确认，再执行隐藏未选中",
+                Location = new Point(ScaleLogical(20), ScaleLogical(16)),
+                AutoSize = true,
+                Checked = false,
             };
 
             _chkTestMode = new CheckBox
             {
-                Text = "测试模式：仅查找并选中，不隐藏（用于验证插件是否正确选中对象）",
-                Location = new Point(20, 80),
-                Size = new Size(500, CalculateContentHeight(this.Font, 1, 6)),
-                Checked = false,
+                Text = "模式 A：仅查找并选中，不隐藏",
+                Location = new Point(ScaleLogical(20), ScaleLogical(40)),
+                AutoSize = true,
+                Checked = true,
                 ForeColor = System.Drawing.Color.FromArgb(192, 57, 43),
             };
-
-            _chkHideAfterSearch.Text = "模式 B：查找并选中后，弹窗确认，再执行隐藏未选中";
-            _chkHideAfterSearch.Checked = false;
-            _chkTestMode.Text = "模式 A：仅查找并选中，不隐藏";
-            _chkTestMode.Checked = true;
 
             _chkHideAfterSearch.CheckedChanged += (s, e) =>
             {
@@ -445,28 +428,32 @@ namespace JiePinPai.Navisworks
             var grpScope = new GroupBox
             {
                 Text = "搜索范围",
-                Location = new Point(20, 120),
-                Size = new Size(350, 80),
+                Location = new Point(ScaleLogical(20), ScaleLogical(72)),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(ScaleLogical(12)),
             };
             var lblScope = new Label
             {
                 Text = "搜索范围由选择树当前蓝色选中节点决定，\n执行搜索时直接按该范围处理。",
-                Location = new Point(12, 24),
-                Size = new Size(320, CalculateContentHeight(this.Font, 2, 8)),
+                Location = new Point(ScaleLogical(12), ScaleLogical(20)),
+                AutoSize = true,
             };
             grpScope.Controls.Add(lblScope);
 
             var grpFuture = new GroupBox
             {
                 Text = "扩展预留",
-                Location = new Point(20, 220),
-                Size = new Size(500, 120),
+                Location = new Point(ScaleLogical(20), ScaleLogical(152)),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(ScaleLogical(12)),
             };
             var lblFuture = new Label
             {
                 Text = "此区域预留用于后续功能扩展。\n您可以直接在此文件中添加新的选项和配置。",
-                Location = new Point(12, 24),
-                Size = new Size(460, CalculateContentHeight(this.Font, 2, 12)),
+                Location = new Point(ScaleLogical(12), ScaleLogical(20)),
+                AutoSize = true,
                 ForeColor = System.Drawing.Color.Gray,
             };
             grpFuture.Controls.Add(lblFuture);
