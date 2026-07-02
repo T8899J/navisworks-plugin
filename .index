@@ -1,0 +1,25 @@
+// 傑出品 Navisworks 查找插件 — 代码索引
+// 自动生成: 2026-07-01
+
+navisworks-plugin/
+├── PluginEntry.cs                  # 插件入口 (AddInPlugin) → 打开 SearchDialog
+├── SearchDialog.cs                 # 主对话框: 4 标签页 + 工具栏 + DataGridView + 搜索执行
+├── SearchCondition.cs              # 搜索条件 POCO
+├── SearchResult.cs                 # 搜索结果 POCO
+├── XmlSearchParser.cs              # 解析 Navisworks exchange XML → List<SearchCondition>
+├── ModelItemMatcher.cs             # Navisworks 原生 Search.FindAll() API 封装
+├── SelectionService.cs             # 设置 doc.CurrentSelection
+├── HideService.cs                  # Hide Unselected (LcOwDocument COM)
+├── HideServiceFixed.cs             # Hide Unselected 修复版
+├── LogService.cs                   # UTF-8 查找日志
+├── DiagnosticLogSession.cs         # 诊断日志会话管理
+├── DiagnosticLogExtensions.cs      # 诊断日志扩展方法
+├── Properties/AssemblyInfo.cs      # 程序集元数据
+├── 傑出品NavisworksPlugin.plugin   # XML 清单 (插件注册 + 自定义选项卡)
+├── NavisworksPlugin.csproj         # .NET Framework 4.8 x64 项目文件
+├── build_2023.bat                  # MSBuild 编译脚本
+├── install_2023.bat                # 部署脚本 (F:\Navisworks\...\Plugins)
+├── install_dotnet48_sdk.bat        # 环境准备
+├── install_vs_buildtools.bat       # VS Build Tools 安装指引
+├── test_search.xml                 # 测试用搜索条件 XML
+└── README.md                       # 项目说明文档

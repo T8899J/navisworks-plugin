@@ -1,0 +1,23 @@
+# Build outputs
+bin/
+obj/
+
+# .NET/VS
+*.user
+*.suo
+*.cache
+*.vs/
+
+# NuGet
+*.nupkg
+
+# CodeGraph (large binary db, indexed per-machine)
+.codegraph/
+
+# IDE
+.vs/
+.vscode/
+
+# OS
+Thumbs.db
+Desktop.ini

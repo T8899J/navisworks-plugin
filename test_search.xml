@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<findspec>
+  <findspecname>测试查找</findspecname>
+  <conditions>
+    <condition test="contains" flags="74">
+      <property>
+        <name internal="名称">名称</name>
+      </property>
+      <value>
+        <data type="wstring">钢</data>
+      </value>
+    </condition>
+  </conditions>
+</findspec>
