@@ -30,6 +30,7 @@ namespace JiePinPai.Navisworks
         // ── 模块 2：选项 ──
         private CheckBox _chkHideAfterSearch;
         private CheckBox _chkTestMode;
+        private CheckBox _chkDiagnosticLog;
 
         // ── 模块 4：结果（搜索后显示） ──
         private Label _lblResultSummary;
@@ -410,14 +411,16 @@ namespace JiePinPai.Navisworks
                 Padding = new Padding(ScaleLogical(12)),
                 BackColor = this.BackColor,
                 ColumnCount = 1,
-                RowCount = 3,
+                RowCount = 4,
             };
-            // GroupBox 开销 = 标题(~20) + 上内边距(14) + 下内边距(8) ≈ 42
-            // 内容 = 2 行文字 ≈ 2×行高，再加余量
+            // GroupBox 开销 = 标题(~20) + 上内边距(14) + 下内边距(8) + 边框(~4) ≈ 44
+            // 行高 = N×行高 + 开销
             var lineHeight = CalculateContentHeight(this.Font, 1, 4);
             var groupRowHeight = lineHeight * 2 + ScaleLogical(44);
+            var singleRowHeight = lineHeight + ScaleLogical(44);
             optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, groupRowHeight));
             optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, groupRowHeight));
+            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, singleRowHeight));
             optionsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             _chkHideAfterSearch = new CheckBox
@@ -502,8 +505,20 @@ namespace JiePinPai.Navisworks
                 ForeColor = System.Drawing.Color.FromArgb(71, 85, 105),
             };
 
+            _chkDiagnosticLog = new CheckBox
+            {
+                Text = "启用诊断日志（每次搜索结束后输出详细诊断文件，用于排查问题）",
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Checked = false,
+                ForeColor = System.Drawing.Color.FromArgb(71, 85, 105),
+                Margin = new Padding(0),
+            };
+
             optionsLayout.Controls.Add(MakeOptionGroup("搜索模式", modePanel), 0, 0);
             optionsLayout.Controls.Add(MakeOptionGroup("搜索范围", lblScope), 0, 1);
+            optionsLayout.Controls.Add(MakeOptionGroup("诊断日志", _chkDiagnosticLog), 0, 2);
             _tabOptions.Controls.Add(optionsLayout);
             _tabOptions.ResumeLayout();
         }
@@ -513,8 +528,8 @@ namespace JiePinPai.Navisworks
             _tabResults.SuspendLayout();
 
             var lineH = MeasureTextHeight(this.Font);
-            // 摘要：3 行文字 + 上下内边距 + 边框
-            var summaryH = lineH * 3 + ScaleLogical(18);
+            // 摘要：3 行文字 + 左右内边距(20) + 边框(4)
+            var summaryH = lineH * 3 + ScaleLogical(24);
             // 详情标题：1 行文字 + 上内边距
             var detailH = lineH + ScaleLogical(6);
 
@@ -1053,14 +1068,15 @@ namespace JiePinPai.Navisworks
             string modeName = isSelectOnlyMode
                 ? "模式 A：仅查找并选中，不隐藏"
                 : "模式 B：查找并选中后，弹窗确认，再执行隐藏未选中";
-            var diagnosticLog =
-                LogService.CreateDiagnosticSession(_doc, _currentXmlPath, _conditions.Count);
+            var diagnosticLog = _chkDiagnosticLog.Checked
+                ? LogService.CreateDiagnosticSession(_doc, _currentXmlPath, _conditions.Count)
+                : null;
             List<SearchResult> results = null;
             int totalMatched = 0;
             bool hideExecuted = false;
 
-            diagnosticLog.LogMode(modeName);
-            diagnosticLog.LogHideIntent(!isSelectOnlyMode);
+            diagnosticLog?.LogMode(modeName);
+            diagnosticLog?.LogHideIntent(!isSelectOnlyMode);
 
             try
             {
@@ -1070,8 +1086,8 @@ namespace JiePinPai.Navisworks
                 List<ModelItem> scopeRoots = SnapshotCurrentSelection(_doc);
                 if (scopeRoots.Count == 0)
                 {
-                    diagnosticLog.LogScopeInfo(scopeRoots, 0);
-                    diagnosticLog.LogModelPrefixInfo(
+                    diagnosticLog?.LogScopeInfo(scopeRoots, 0);
+                    diagnosticLog?.LogModelPrefixInfo(
                         Enumerable.Empty<string>(),
                         null,
                         null);
@@ -1088,8 +1104,8 @@ namespace JiePinPai.Navisworks
                 string protectedName = null;
                 if (modelPrefixes.Count == 0)
                 {
-                    diagnosticLog.LogScopeInfo(scopeRoots, 0);
-                    diagnosticLog.LogModelPrefixInfo(
+                    diagnosticLog?.LogScopeInfo(scopeRoots, 0);
+                    diagnosticLog?.LogModelPrefixInfo(
                         modelPrefixes,
                         null,
                         null);
@@ -1103,8 +1119,8 @@ namespace JiePinPai.Navisworks
 
                 if (modelPrefixes.Count > 1)
                 {
-                    diagnosticLog.LogScopeInfo(scopeRoots, 0);
-                    diagnosticLog.LogModelPrefixInfo(
+                    diagnosticLog?.LogScopeInfo(scopeRoots, 0);
+                    diagnosticLog?.LogModelPrefixInfo(
                         modelPrefixes,
                         null,
                         null);
@@ -1119,8 +1135,8 @@ namespace JiePinPai.Navisworks
                 modelPrefix = modelPrefixes[0];
                 protectedName = modelPrefix + "-STR";
 
-                diagnosticLog.LogScopeInfo(scopeRoots, scopeRoots.Count);
-                diagnosticLog.LogModelPrefixInfo(
+                diagnosticLog?.LogScopeInfo(scopeRoots, scopeRoots.Count);
+                diagnosticLog?.LogModelPrefixInfo(
                     modelPrefixes,
                     modelPrefix,
                     protectedName);
@@ -1128,7 +1144,7 @@ namespace JiePinPai.Navisworks
                 results = ModelItemMatcher.MatchAll(
                     _doc, scopeRoots, _conditions);
 
-                diagnosticLog.LogXmlScopeResultStats(
+                diagnosticLog?.LogXmlScopeResultStats(
                     results.Count, 0, 0);
 
                 List<ModelItem> matchedItemsInScope =
@@ -1152,7 +1168,7 @@ namespace JiePinPai.Navisworks
                     protectedKeepResult = ProtectedKeepService.FindProtectedItems(
                         _doc, protectedName);
                 }
-                diagnosticLog.LogProtectedNodeStats(
+                diagnosticLog?.LogProtectedNodeStats(
                     protectedKeepResult.TargetNodeName,
                     protectedKeepResult.Found,
                     protectedKeepResult.MatchMode,
@@ -1164,8 +1180,8 @@ namespace JiePinPai.Navisworks
                 {
                     if (!isSelectOnlyMode)
                     {
-                        diagnosticLog.LogHidePrecheck(0, 0);
-                        diagnosticLog.LogHideBlocked();
+                        diagnosticLog?.LogHidePrecheck(0, 0);
+                        diagnosticLog?.LogHideBlocked();
                     }
 
                     MessageBox.Show(this,
@@ -1182,7 +1198,7 @@ namespace JiePinPai.Navisworks
                             "傑出品·警告",
                             MessageBoxButtons.YesNo,
                             MessageBoxIcon.Warning);
-                        diagnosticLog.LogDecision(
+                        diagnosticLog?.LogDecision(
                             $"Protected node warning choice: {protectedChoice}");
                         if (protectedChoice != DialogResult.Yes)
                         {
@@ -1204,7 +1220,7 @@ namespace JiePinPai.Navisworks
                         && finalKeepItems.Count > 0
                         && actualSelectionCount > 0;
 
-                    diagnosticLog.LogFinalKeepStats(
+                    diagnosticLog?.LogFinalKeepStats(
                         matchedItemsInScope.Count,
                         protectedKeepResult.ProtectedItems.Count,
                         finalKeepItems.Count,
@@ -1213,9 +1229,9 @@ namespace JiePinPai.Navisworks
 
                     if (finalKeepItems.Count == 0)
                     {
-                        diagnosticLog.LogDecision("Blocked: finalKeepItems count is 0.");
-                        diagnosticLog.LogHidePrecheck(0, actualSelectionCount);
-                        diagnosticLog.LogHideBlocked();
+                        diagnosticLog?.LogDecision("Blocked: finalKeepItems count is 0.");
+                        diagnosticLog?.LogHidePrecheck(0, actualSelectionCount);
+                        diagnosticLog?.LogHideBlocked();
                         MessageBox.Show(this,
                             "最终保留集合为空，已取消隐藏。",
                             "傑出品·保护",
@@ -1226,9 +1242,9 @@ namespace JiePinPai.Navisworks
 
                     if (actualSelectionCount == 0)
                     {
-                        diagnosticLog.LogDecision("Blocked: CurrentSelection count is 0.");
-                        diagnosticLog.LogHidePrecheck(finalKeepItems.Count, actualSelectionCount);
-                        diagnosticLog.LogHideBlocked();
+                        diagnosticLog?.LogDecision("Blocked: CurrentSelection count is 0.");
+                        diagnosticLog?.LogHidePrecheck(finalKeepItems.Count, actualSelectionCount);
+                        diagnosticLog?.LogHideBlocked();
                         MessageBox.Show(this,
                             "写入最终保留集合后当前选择为空，已取消隐藏。",
                             "傑出品·保护",
@@ -1260,7 +1276,7 @@ namespace JiePinPai.Navisworks
                             MessageBoxButtons.YesNoCancel,
                             MessageBoxIcon.Question);
 
-                        diagnosticLog.LogHidePrompt(
+                        diagnosticLog?.LogHidePrompt(
                             finalKeepItems.Count,
                             actualSelectionCount,
                             choice.ToString());
@@ -1284,7 +1300,7 @@ namespace JiePinPai.Navisworks
             }
             catch (Exception ex)
             {
-                diagnosticLog.LogException("执行搜索", ex);
+                diagnosticLog?.LogException("执行搜索", ex);
 
                 string detail = ex.Message;
                 if (ex.InnerException != null)
@@ -1295,7 +1311,7 @@ namespace JiePinPai.Navisworks
             }
             finally
             {
-                diagnosticLog.WriteToFile();
+                diagnosticLog?.WriteToFile();
                 Cursor = Cursors.Default;
                 _btnSearch.Enabled = true;
             }
