@@ -25,6 +25,7 @@ namespace JiePinPai.Navisworks
         private Button _btnClearConditions;
         private Button _btnImportXml;
         private Button _btnExportXml;
+        private Button _btnUsageGuide;
 
         // ── 模块 2：选项 ──
         private CheckBox _chkHideAfterSearch;
@@ -78,32 +79,38 @@ namespace JiePinPai.Navisworks
         private void InitializeComponent()
         {
             this.Text = "傑出品";
-            this.Size = new Size(900, 650);
-            this.MinimumSize = new Size(700, 500);
+            this.Size = new Size(ScaleLogical(960), ScaleLogical(680));
+            this.MinimumSize = new Size(ScaleLogical(760), ScaleLogical(540));
             this.StartPosition = FormStartPosition.CenterParent;
             this.Font = new Font("Microsoft YaHei UI", 9F);
-            this.BackColor = System.Drawing.Color.FromArgb(248, 249, 250);
+            this.BackColor = System.Drawing.Color.FromArgb(245, 247, 250);
             this.Icon = null;
 
             // ── TabControl ──
             _tabControl = new TabControl
             {
                 Dock = DockStyle.Fill,
-                Padding = new Point(12, 6),
+                Padding = new Point(ScaleLogical(12), ScaleLogical(6)),
                 Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
                 SizeMode = TabSizeMode.Normal,
             };
 
             // ========== 选项卡 1：搜索条件 ==========
             _tabConditions = new TabPage("搜索条件");
+            _tabConditions.BackColor = this.BackColor;
+            _tabConditions.Padding = new Padding(ScaleLogical(8));
             BuildConditionsTab();
 
             // ========== 选项卡 2：选项 ==========
             _tabOptions = new TabPage("选项");
+            _tabOptions.BackColor = this.BackColor;
+            _tabOptions.Padding = new Padding(ScaleLogical(8));
             BuildOptionsTab();
 
             // ========== 选项卡 3：结果 ==========
             _tabResults = new TabPage("结果");
+            _tabResults.BackColor = this.BackColor;
+            _tabResults.Padding = new Padding(ScaleLogical(8));
             BuildResultsTab();
 
             _tabControl.TabPages.Add(_tabConditions);
@@ -114,26 +121,25 @@ namespace JiePinPai.Navisworks
             var bottomPanel = new Panel
             {
                 Dock = DockStyle.Bottom,
-                Height = CalculatePanelHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Bold), 34),
-                Padding = new Padding(ScaleLogical(10)),
-                BackColor = System.Drawing.Color.FromArgb(240, 241, 242),
+                Height = CalculatePanelHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Bold), 44),
+                Padding = new Padding(ScaleLogical(12)),
+                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
             };
 
             var btnFont = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
-            var btnHeight = CalculateButtonHeight(btnFont) - ScaleLogical(4);
+            var btnHeight = CalculateButtonHeight(btnFont);
 
             _btnSearch = new Button
             {
                 Text = "执行搜索",
-                Size = new Size(ScaleLogical(108), btnHeight),
-                Location = new Point(ScaleLogical(8), ScaleLogical(6)),
-                BackColor = System.Drawing.Color.FromArgb(52, 152, 219),
+                Dock = DockStyle.Fill,
+                BackColor = System.Drawing.Color.FromArgb(37, 99, 235),
                 ForeColor = System.Drawing.Color.White,
                 FlatStyle = FlatStyle.Flat,
                 FlatAppearance =
                 {
                     BorderSize = 0,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(41, 128, 185),
+                    MouseOverBackColor = System.Drawing.Color.FromArgb(29, 78, 216),
                 },
                 Font = btnFont,
                 UseVisualStyleBackColor = false,
@@ -143,52 +149,58 @@ namespace JiePinPai.Navisworks
             _btnExportResults = new Button
             {
                 Text = "导出结果",
-                Size = new Size(ScaleLogical(90), btnHeight),
+                Dock = DockStyle.Fill,
                 FlatStyle = FlatStyle.Flat,
                 FlatAppearance =
                 {
-                    BorderColor = System.Drawing.Color.FromArgb(189, 195, 199),
+                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
                     BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(230, 240, 255),
+                    MouseOverBackColor = System.Drawing.Color.FromArgb(239, 246, 255),
                 },
-                BackColor = System.Drawing.Color.FromArgb(248, 249, 250),
-                ForeColor = System.Drawing.Color.FromArgb(44, 62, 80),
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
                 Font = btnFont,
                 UseVisualStyleBackColor = false,
                 Enabled = false,
             };
             _btnExportResults.Click += BtnExportResults_Click;
-            _btnExportResults.Location = new Point(
-                _btnSearch.Right + ScaleLogical(8),
-                _btnSearch.Top);
 
             _btnClose = new Button
             {
                 Text = "关闭",
-                Size = new Size(ScaleLogical(72), btnHeight),
-                Location = new Point(0, _btnSearch.Top),
+                Dock = DockStyle.Fill,
                 FlatStyle = FlatStyle.Flat,
                 FlatAppearance =
                 {
-                    BorderColor = System.Drawing.Color.FromArgb(189, 195, 199),
+                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
                     BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(230, 240, 255),
+                    MouseOverBackColor = System.Drawing.Color.FromArgb(248, 250, 252),
                 },
-                BackColor = System.Drawing.Color.FromArgb(248, 249, 250),
-                ForeColor = System.Drawing.Color.FromArgb(44, 62, 80),
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
                 Font = btnFont,
                 UseVisualStyleBackColor = false,
                 DialogResult = DialogResult.Cancel,
             };
 
-            bottomPanel.Controls.Add(_btnSearch);
-            bottomPanel.Controls.Add(_btnExportResults);
-            bottomPanel.Controls.Add(_btnClose);
-
-            // 关闭按钮始终贴在面板右边缘，其余按钮靠左
-            void RepositionClose() =>
-                _btnClose.Left = bottomPanel.ClientSize.Width - _btnClose.Width - ScaleLogical(10);
-            bottomPanel.Resize += (s, e) => RepositionClose();
+            var bottomLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 5,
+                RowCount = 1,
+                Padding = new Padding(0),
+            };
+            var bottomGap = ScaleLogical(12);
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(108)));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(84)));
+            bottomLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            bottomLayout.Controls.Add(_btnSearch, 0, 0);
+            bottomLayout.Controls.Add(_btnExportResults, 2, 0);
+            bottomLayout.Controls.Add(_btnClose, 4, 0);
+            bottomPanel.Controls.Add(bottomLayout);
 
             // ── 主布局 ──
             this.Controls.Add(_tabControl);
@@ -210,13 +222,13 @@ namespace JiePinPai.Navisworks
                 FlatStyle = FlatStyle.Flat,
                 FlatAppearance =
                 {
-                    BorderColor = System.Drawing.Color.FromArgb(189, 195, 199),
+                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
                     BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(230, 240, 255),
-                    MouseDownBackColor = System.Drawing.Color.FromArgb(189, 204, 230),
+                    MouseOverBackColor = System.Drawing.Color.FromArgb(239, 246, 255),
+                    MouseDownBackColor = System.Drawing.Color.FromArgb(219, 234, 254),
                 },
-                BackColor = System.Drawing.Color.FromArgb(248, 249, 250),
-                ForeColor = System.Drawing.Color.FromArgb(44, 62, 80),
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
                 Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular),
                 UseVisualStyleBackColor = false,
                 Margin = new Padding(ScaleLogical(4)),
@@ -304,24 +316,27 @@ namespace JiePinPai.Navisworks
             {
                 Height = CalculatePanelHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Regular), 20),
                 Dock = DockStyle.Top,
-                ColumnCount = 5,
+                ColumnCount = 6,
                 RowCount = 1,
                 Padding = new Padding(ScaleLogical(6)),
+                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
             };
-            for (int i = 0; i < 5; i++)
-                toolStrip.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+            for (int i = 0; i < 6; i++)
+                toolStrip.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / 6F));
 
             _btnImportXml = MakeToolButton("导入", BtnImportXml_Click);
             _btnExportXml = MakeToolButton("导出", BtnExportXml_Click);
             _btnAddCondition = MakeToolButton("添加", BtnAddCondition_Click);
             _btnDeleteCondition = MakeToolButton("删除", BtnDeleteCondition_Click);
             _btnClearConditions = MakeToolButton("清空", (s, e) => { _conditions.Clear(); RefreshConditionsGrid(); });
+            _btnUsageGuide = MakeToolButton("使用说明", BtnUsageGuide_Click);
 
             toolStrip.Controls.Add(_btnImportXml, 0, 0);
             toolStrip.Controls.Add(_btnExportXml, 1, 0);
             toolStrip.Controls.Add(_btnAddCondition, 2, 0);
             toolStrip.Controls.Add(_btnDeleteCondition, 3, 0);
             toolStrip.Controls.Add(_btnClearConditions, 4, 0);
+            toolStrip.Controls.Add(_btnUsageGuide, 5, 0);
             toolStrip.Height = CalculateToolbarHeight(_btnImportXml, toolStrip.Padding);
 
             // ── 搜索条件表格：逐步构建确保列标题可见 ──
@@ -336,7 +351,7 @@ namespace JiePinPai.Navisworks
             {
                 Dock = DockStyle.Fill,
                 BackColor = System.Drawing.Color.White,
-                Padding = new Padding(0),
+                Padding = new Padding(ScaleLogical(6), 0, ScaleLogical(6), ScaleLogical(6)),
             };
             gridHost.Controls.Add(_conditionsGrid);
             _tabConditions.Controls.Add(gridHost);
@@ -360,7 +375,10 @@ namespace JiePinPai.Navisworks
             grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
             grid.BackgroundColor = System.Drawing.Color.White;
             grid.BorderStyle = BorderStyle.FixedSingle;
+            grid.GridColor = System.Drawing.Color.FromArgb(226, 232, 240);
             grid.EnableHeadersVisualStyles = false;
+            grid.RowTemplate.Height = CalculateContentHeight(grid.Font, 1, 12);
+            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
             // 先添加列，再设置 Fill 模式
             grid.Columns.Add("Category", "分类");
             grid.Columns.Add("Property", "属性");
@@ -369,15 +387,17 @@ namespace JiePinPai.Navisworks
             grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
             // 列标题样式
             grid.ColumnHeadersHeight = 24;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = System.Drawing.SystemColors.Control;
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular);
+            grid.ColumnHeadersDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(241, 245, 249);
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
             grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
             ApplyGridHeaderLayout(grid);
             grid.DefaultCellStyle.BackColor = System.Drawing.Color.White;
-            grid.DefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(44, 62, 80);
-            grid.DefaultCellStyle.SelectionBackColor = System.Drawing.Color.FromArgb(230, 240, 255);
-            grid.DefaultCellStyle.SelectionForeColor = System.Drawing.Color.FromArgb(44, 62, 80);
-            grid.AlternatingRowsDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(250, 251, 252);
+            grid.DefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
+            grid.DefaultCellStyle.Padding = new Padding(ScaleLogical(4), 0, ScaleLogical(4), 0);
+            grid.DefaultCellStyle.SelectionBackColor = System.Drawing.Color.FromArgb(219, 234, 254);
+            grid.DefaultCellStyle.SelectionForeColor = System.Drawing.Color.FromArgb(30, 41, 59);
+            grid.AlternatingRowsDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(248, 250, 252);
             return grid;
         }
 
@@ -385,21 +405,36 @@ namespace JiePinPai.Navisworks
         {
             _tabOptions.SuspendLayout();
 
+            var optionsLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(ScaleLogical(18)),
+                BackColor = this.BackColor,
+                ColumnCount = 1,
+                RowCount = 3,
+            };
+            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(128)));
+            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(112)));
+            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
             _chkHideAfterSearch = new CheckBox
             {
                 Text = "模式 B：查找并选中后，弹窗确认，再执行隐藏未选中",
-                Location = new Point(ScaleLogical(20), ScaleLogical(16)),
+                Dock = DockStyle.Fill,
                 AutoSize = true,
                 Checked = false,
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                Margin = new Padding(0, 0, 0, ScaleLogical(8)),
             };
 
             _chkTestMode = new CheckBox
             {
                 Text = "模式 A：仅查找并选中，不隐藏",
-                Location = new Point(ScaleLogical(20), ScaleLogical(40)),
+                Dock = DockStyle.Fill,
                 AutoSize = true,
                 Checked = true,
-                ForeColor = System.Drawing.Color.FromArgb(192, 57, 43),
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                Margin = new Padding(0, 0, 0, ScaleLogical(8)),
             };
 
             _chkHideAfterSearch.CheckedChanged += (s, e) =>
@@ -425,43 +460,46 @@ namespace JiePinPai.Navisworks
                 }
             };
 
-            var grpScope = new GroupBox
+            GroupBox MakeOptionGroup(string title, Control content)
             {
-                Text = "搜索范围",
-                Location = new Point(ScaleLogical(20), ScaleLogical(72)),
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Padding = new Padding(ScaleLogical(12)),
+                var group = new GroupBox
+                {
+                    Text = title,
+                    Dock = DockStyle.Fill,
+                    Padding = new Padding(ScaleLogical(14), ScaleLogical(18), ScaleLogical(14), ScaleLogical(12)),
+                    ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                    BackColor = this.BackColor,
+                    Margin = new Padding(0, 0, 0, ScaleLogical(12)),
+                };
+                content.Dock = DockStyle.Fill;
+                group.Controls.Add(content);
+                return group;
+            }
+
+            var modePanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
             };
+            modePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            modePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+            modePanel.Controls.Add(_chkTestMode, 0, 0);
+            modePanel.Controls.Add(_chkHideAfterSearch, 0, 1);
+
             var lblScope = new Label
             {
-                Text = "搜索范围由选择树当前蓝色选中节点决定，\n执行搜索时直接按该范围处理。",
-                Location = new Point(ScaleLogical(12), ScaleLogical(20)),
-                AutoSize = true,
+                Text = "搜索范围由 Navisworks 选择树当前选中的节点决定。\r\n" +
+                       "如果没有预先选中范围，执行搜索时会按整个模型处理。",
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = System.Drawing.Color.FromArgb(71, 85, 105),
             };
-            grpScope.Controls.Add(lblScope);
 
-            var grpFuture = new GroupBox
-            {
-                Text = "扩展预留",
-                Location = new Point(ScaleLogical(20), ScaleLogical(152)),
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                Padding = new Padding(ScaleLogical(12)),
-            };
-            var lblFuture = new Label
-            {
-                Text = "此区域预留用于后续功能扩展。\n您可以直接在此文件中添加新的选项和配置。",
-                Location = new Point(ScaleLogical(12), ScaleLogical(20)),
-                AutoSize = true,
-                ForeColor = System.Drawing.Color.Gray,
-            };
-            grpFuture.Controls.Add(lblFuture);
-
-            _tabOptions.Controls.Add(_chkHideAfterSearch);
-            _tabOptions.Controls.Add(_chkTestMode);
-            _tabOptions.Controls.Add(grpScope);
-            _tabOptions.Controls.Add(grpFuture);
+            optionsLayout.Controls.Add(MakeOptionGroup("搜索模式", modePanel), 0, 0);
+            optionsLayout.Controls.Add(MakeOptionGroup("搜索范围", lblScope), 0, 1);
+            _tabOptions.Controls.Add(optionsLayout);
             _tabOptions.ResumeLayout();
         }
 
@@ -473,8 +511,9 @@ namespace JiePinPai.Navisworks
             {
                 Dock = DockStyle.Top,
                 Height = CalculateContentHeight(this.Font, 3, 20),
-                Padding = new Padding(12),
-                BackColor = System.Drawing.Color.LightYellow,
+                Padding = new Padding(ScaleLogical(12)),
+                BackColor = System.Drawing.Color.FromArgb(239, 246, 255),
+                ForeColor = System.Drawing.Color.FromArgb(30, 64, 175),
                 BorderStyle = BorderStyle.FixedSingle,
             };
 
@@ -483,7 +522,8 @@ namespace JiePinPai.Navisworks
                 Text = "详细匹配结果：",
                 Dock = DockStyle.Top,
                 Height = CalculateContentHeight(this.Font, 1, 4),
-                Padding = new Padding(4, 4, 4, 0),
+                Padding = new Padding(ScaleLogical(10), ScaleLogical(6), 0, 0),
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
             };
 
             _lstResultDetails = new ListBox
@@ -491,6 +531,9 @@ namespace JiePinPai.Navisworks
                 Dock = DockStyle.Fill,
                 Font = new Font("Consolas", 9F),
                 IntegralHeight = false,
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(30, 41, 59),
+                BorderStyle = BorderStyle.FixedSingle,
             };
 
             _tabResults.Controls.Add(_lstResultDetails);
@@ -540,39 +583,156 @@ namespace JiePinPai.Navisworks
             var form = new Form
             {
                 Text = "编辑条件",
-                Size = new Size(ScaleLogical(460), ScaleLogical(260)),
+                ClientSize = new Size(ScaleLogical(760), ScaleLogical(420)),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent,
                 MaximizeBox = false,
                 MinimizeBox = false,
                 ShowInTaskbar = false,
+                Font = new Font("Microsoft YaHei UI", 9F),
             };
 
-            var lblCat = new Label { Text = "分类（可选）：", Left = 12, Top = 12, Width = 100 };
-            var txtCat = new TextBox { Text = category, Left = 120, Top = 10, Width = 310 };
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(ScaleLogical(16)),
+                ColumnCount = 2,
+                RowCount = 6,
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(130)));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(156)));
+            for (int i = 0; i < 4; i++)
+            {
+                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(42)));
+            }
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(54)));
 
-            var lblProp = new Label { Text = "属性名：", Left = 12, Top = 44, Width = 100 };
-            var txtProp = new TextBox { Text = property, Left = 120, Top = 42, Width = 310 };
+            var helpText = new Label
+            {
+                Text = "填写方法：先在 Navisworks 里选中目标对象，打开“属性”窗口，对照属性面板填写。\r\n" +
+                       "分类：填属性所在的分组/选项卡名称，例如 Item、Element、SmartPlant 3D；不确定可留空。\r\n" +
+                       "属性名：填属性面板左侧名称，例如 名称、System Path、Tag，必须和界面显示一致。\r\n" +
+                       "查询值：填属性面板右侧要找的值，例如 M14-101、P-001 或某段编号。\r\n" +
+                       "匹配方式：equals = 完全相同；contains = 属性值里包含这段文字即可。\r\n" +
+                       "示例：属性面板显示 Item / 名称 = M14-101，就填 分类：Item，属性名：名称，查询值：M14-101。",
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                TextAlign = ContentAlignment.TopLeft,
+                Padding = new Padding(ScaleLogical(10)),
+                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
+                BorderStyle = BorderStyle.FixedSingle,
+            };
+            layout.Controls.Add(helpText, 0, 0);
+            layout.SetColumnSpan(helpText, 2);
 
-            var lblTest = new Label { Text = "匹配方式：", Left = 12, Top = 76, Width = 100 };
+            Label MakeFieldLabel(string text)
+            {
+                return new Label
+                {
+                    Text = text,
+                    Dock = DockStyle.Fill,
+                    AutoSize = false,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Padding = new Padding(0, 0, ScaleLogical(8), 0),
+                };
+            }
+
+            TextBox MakeTextBox(string text)
+            {
+                return new TextBox
+                {
+                    Text = text,
+                    Dock = DockStyle.Top,
+                    Margin = new Padding(0, ScaleLogical(7), 0, 0),
+                };
+            }
+
+            var lblCat = MakeFieldLabel("分类（可选）");
+            var txtCat = MakeTextBox(category);
+
+            var lblProp = MakeFieldLabel("属性名（必填）");
+            var txtProp = MakeTextBox(property);
+
+            var lblTest = MakeFieldLabel("匹配方式");
             var cmbTest = new ComboBox
             {
-                Left = 120, Top = 74, Width = 310, DropDownStyle = ComboBoxStyle.DropDownList,
+                Dock = DockStyle.Top,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Margin = new Padding(0, ScaleLogical(7), 0, 0),
             };
             cmbTest.Items.AddRange(new[] { "equals", "contains" });
-            cmbTest.SelectedItem = test;
+            cmbTest.SelectedItem = string.Equals(test, "contains", StringComparison.OrdinalIgnoreCase)
+                ? "contains"
+                : "equals";
 
-            var lblVal = new Label { Text = "查询值：", Left = 12, Top = 108, Width = 100 };
-            var txtVal = new TextBox { Text = value, Left = 120, Top = 106, Width = 310 };
+            var lblVal = MakeFieldLabel("查询值");
+            var txtVal = MakeTextBox(value);
 
-            var btnOk = new Button { Text = "确定", Left = 270, Top = 148, Width = 75, DialogResult = DialogResult.OK };
-            var btnCancel = new Button { Text = "取消", Left = 355, Top = 148, Width = 75, DialogResult = DialogResult.Cancel };
+            layout.Controls.Add(lblCat, 0, 1);
+            layout.Controls.Add(txtCat, 1, 1);
+            layout.Controls.Add(lblProp, 0, 2);
+            layout.Controls.Add(txtProp, 1, 2);
+            layout.Controls.Add(lblTest, 0, 3);
+            layout.Controls.Add(cmbTest, 1, 3);
+            layout.Controls.Add(lblVal, 0, 4);
+            layout.Controls.Add(txtVal, 1, 4);
 
-            form.Controls.AddRange(new Control[] {
-                lblCat, txtCat, lblProp, txtProp,
-                lblTest, cmbTest, lblVal, txtVal,
-                btnOk, btnCancel,
-            });
+            var buttonPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, ScaleLogical(10), 0, 0),
+                ColumnCount = 4,
+                RowCount = 1,
+            };
+            var buttonGap = ScaleLogical(12);
+            var buttonWidth = ScaleLogical(112);
+            var buttonHeight = CalculateButtonHeight(form.Font) + ScaleLogical(8);
+            var buttonSize = new Size(buttonWidth, buttonHeight);
+            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, buttonWidth));
+            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, buttonGap));
+            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, buttonWidth));
+            buttonPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, buttonHeight));
+
+            var btnOk = new Button
+            {
+                Text = "确定",
+                Dock = DockStyle.Fill,
+                Size = buttonSize,
+                TextAlign = ContentAlignment.MiddleCenter,
+                DialogResult = DialogResult.OK,
+                Margin = new Padding(0),
+            };
+            var btnCancel = new Button
+            {
+                Text = "取消",
+                Dock = DockStyle.Fill,
+                Size = buttonSize,
+                TextAlign = ContentAlignment.MiddleCenter,
+                DialogResult = DialogResult.Cancel,
+                Margin = new Padding(0),
+            };
+            buttonPanel.Controls.Add(btnOk, 1, 0);
+            buttonPanel.Controls.Add(btnCancel, 3, 0);
+            layout.Controls.Add(buttonPanel, 0, 5);
+            layout.SetColumnSpan(buttonPanel, 2);
+
+            btnOk.Click += (s, e) =>
+            {
+                if (string.IsNullOrWhiteSpace(txtProp.Text))
+                {
+                    MessageBox.Show(form,
+                        "请填写属性名，例如：名称、System Path。",
+                        "属性名不能为空",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                    form.DialogResult = DialogResult.None;
+                    txtProp.Focus();
+                }
+            };
+
+            form.Controls.Add(layout);
             form.AcceptButton = btnOk;
             form.CancelButton = btnCancel;
 
@@ -653,6 +813,178 @@ namespace JiePinPai.Navisworks
                     ExportConditionsToXml(dialog.FileName);
                 }
             }
+        }
+
+        private void BtnUsageGuide_Click(object sender, EventArgs e)
+        {
+            ShowUsageGuideDialog();
+        }
+
+        private void ShowUsageGuideDialog()
+        {
+            var form = new Form
+            {
+                Text = "使用说明",
+                ClientSize = new Size(ScaleLogical(760), ScaleLogical(620)),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                ShowInTaskbar = false,
+                Font = new Font("Microsoft YaHei UI", 9F),
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(ScaleLogical(14)),
+                ColumnCount = 1,
+                RowCount = 2,
+            };
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(70)));
+
+            var guidePanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = System.Drawing.Color.White,
+                Padding = new Padding(ScaleLogical(18)),
+            };
+            var guideContent = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                Location = new Point(guidePanel.Padding.Left, guidePanel.Padding.Top),
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = System.Drawing.Color.White,
+            };
+            guidePanel.Controls.Add(guideContent);
+
+            var guideLabels = new List<Label>();
+            var guideHeadingFont = new Font(form.Font, FontStyle.Bold);
+            form.Disposed += (s, e) => guideHeadingFont.Dispose();
+
+            Label MakeGuideLabel(string text, Font font, System.Drawing.Color color, Padding margin)
+            {
+                var label = new Label
+                {
+                    AutoSize = true,
+                    Text = text,
+                    Font = font,
+                    ForeColor = color,
+                    BackColor = System.Drawing.Color.White,
+                    Margin = margin,
+                };
+                guideLabels.Add(label);
+                return label;
+            }
+
+            void AddGuideSection(string title, params string[] lines)
+            {
+                guideContent.Controls.Add(MakeGuideLabel(
+                    title,
+                    guideHeadingFont,
+                    System.Drawing.Color.FromArgb(44, 62, 80),
+                    new Padding(0, 0, 0, ScaleLogical(8))));
+
+                foreach (var line in lines)
+                {
+                    guideContent.Controls.Add(MakeGuideLabel(
+                        line,
+                        form.Font,
+                        System.Drawing.Color.FromArgb(33, 37, 41),
+                        new Padding(0, 0, 0, ScaleLogical(6))));
+                }
+
+                guideContent.Controls.Add(new Panel
+                {
+                    Width = ScaleLogical(1),
+                    Height = ScaleLogical(12),
+                    Margin = new Padding(0),
+                    BackColor = System.Drawing.Color.White,
+                });
+            }
+
+            AddGuideSection("使用流程",
+                "1. 在 Navisworks 里打开模型。",
+                "2. 如果只想查某个范围，先在选择树里选中该范围；否则默认查整个模型。",
+                "3. 在“搜索条件”页导入 XML，或点击“添加”手动填写一条条件。",
+                "4. 点击“执行搜索”，插件会选中匹配对象并在“结果”页显示汇总。",
+                "5. 如果选择隐藏模式，确认后才会隐藏未选中对象；匹配数为 0 时不会隐藏。");
+
+            AddGuideSection("手动添加条件怎么填",
+                "1. 先在模型中选中一个你想查找的目标对象。",
+                "2. 打开 Navisworks 的“属性”窗口。",
+                "3. 分类：填写属性窗口里的分组/选项卡名称，例如 Item、Element、SmartPlant 3D。不确定时可以留空。",
+                "4. 属性名：填写属性面板左侧的名称，例如 名称、System Path、Tag。",
+                "5. 查询值：填写属性面板右侧要找的值，例如 M14-101、P-001。",
+                "6. 匹配方式：equals 表示完全相同；contains 表示包含这段文字即可。");
+
+            AddGuideSection("示例一：按名称精确查找",
+                "属性面板显示：Item / 名称 = M14-101",
+                "填写：分类 = Item，属性名 = 名称，匹配方式 = equals，查询值 = M14-101");
+
+            AddGuideSection("示例二：按路径包含查找",
+                "属性面板显示：SmartPlant 3D / System Path = Area-01/P-001/Line-A",
+                "填写：分类 = SmartPlant 3D，属性名 = System Path，匹配方式 = contains，查询值 = P-001");
+
+            AddGuideSection("常见注意点",
+                "- 属性名必须和 Navisworks 属性面板显示一致。",
+                "- 查询值前后不要多打空格。",
+                "- 分类不确定时先留空，插件会尝试自动识别。",
+                "- 导入 XML 后也可以双击表格行修改条件。");
+
+            void UpdateGuideLabelWidth()
+            {
+                var contentWidth = Math.Max(
+                    ScaleLogical(320),
+                    guidePanel.ClientSize.Width - guidePanel.Padding.Horizontal - ScaleLogical(24));
+                guideContent.Width = contentWidth;
+                foreach (var label in guideLabels)
+                {
+                    label.MaximumSize = new Size(contentWidth, 0);
+                }
+            }
+            guidePanel.Resize += (s, e) => UpdateGuideLabelWidth();
+
+            var buttonPanel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, ScaleLogical(12), 0, ScaleLogical(4)),
+                ColumnCount = 2,
+                RowCount = 1,
+            };
+            var closeButtonWidth = ScaleLogical(104);
+            var closeButtonHeight = CalculateButtonHeight(form.Font) + ScaleLogical(8);
+            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, closeButtonWidth));
+            buttonPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, closeButtonHeight));
+            var btnClose = new Button
+            {
+                Text = "关闭",
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0),
+                Size = new Size(closeButtonWidth, closeButtonHeight),
+                DialogResult = DialogResult.OK,
+            };
+            buttonPanel.Controls.Add(btnClose, 1, 0);
+
+            layout.Controls.Add(guidePanel, 0, 0);
+            layout.Controls.Add(buttonPanel, 0, 1);
+            form.Controls.Add(layout);
+            form.AcceptButton = btnClose;
+            form.CancelButton = btnClose;
+            form.Shown += (s, e) =>
+            {
+                UpdateGuideLabelWidth();
+                btnClose.Focus();
+            };
+            form.ShowDialog(this);
         }
 
         private void BtnAddCondition_Click(object sender, EventArgs e)
