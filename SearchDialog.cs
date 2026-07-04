@@ -316,7 +316,6 @@ namespace JiePinPai.Navisworks
             {
                 Height = CalculatePanelHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Regular), 20),
                 Dock = DockStyle.Top,
-                ColumnCount = 6,
                 RowCount = 1,
                 Padding = new Padding(ScaleLogical(6)),
                 BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
@@ -408,33 +407,39 @@ namespace JiePinPai.Navisworks
             var optionsLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(ScaleLogical(18)),
+                Padding = new Padding(ScaleLogical(12)),
                 BackColor = this.BackColor,
                 ColumnCount = 1,
                 RowCount = 3,
             };
-            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(128)));
-            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(112)));
+            // GroupBox 开销 = 标题(~20) + 上内边距(14) + 下内边距(8) ≈ 42
+            // 内容 = 2 行文字 ≈ 2×行高，再加余量
+            var lineHeight = CalculateContentHeight(this.Font, 1, 4);
+            var groupRowHeight = lineHeight * 2 + ScaleLogical(44);
+            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, groupRowHeight));
+            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, groupRowHeight));
             optionsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             _chkHideAfterSearch = new CheckBox
             {
                 Text = "模式 B：查找并选中后，弹窗确认，再执行隐藏未选中",
                 Dock = DockStyle.Fill,
-                AutoSize = true,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
                 Checked = false,
                 ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Margin = new Padding(0, 0, 0, ScaleLogical(8)),
+                Margin = new Padding(0),
             };
 
             _chkTestMode = new CheckBox
             {
                 Text = "模式 A：仅查找并选中，不隐藏",
                 Dock = DockStyle.Fill,
-                AutoSize = true,
+                AutoSize = false,
+                TextAlign = ContentAlignment.MiddleLeft,
                 Checked = true,
                 ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Margin = new Padding(0, 0, 0, ScaleLogical(8)),
+                Margin = new Padding(0),
             };
 
             _chkHideAfterSearch.CheckedChanged += (s, e) =>
@@ -466,10 +471,10 @@ namespace JiePinPai.Navisworks
                 {
                     Text = title,
                     Dock = DockStyle.Fill,
-                    Padding = new Padding(ScaleLogical(14), ScaleLogical(18), ScaleLogical(14), ScaleLogical(12)),
+                    Padding = new Padding(ScaleLogical(10), ScaleLogical(14), ScaleLogical(10), ScaleLogical(8)),
                     ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
                     BackColor = this.BackColor,
-                    Margin = new Padding(0, 0, 0, ScaleLogical(12)),
+                    Margin = new Padding(0, 0, 0, ScaleLogical(8)),
                 };
                 content.Dock = DockStyle.Fill;
                 group.Controls.Add(content);
@@ -507,11 +512,17 @@ namespace JiePinPai.Navisworks
         {
             _tabResults.SuspendLayout();
 
+            var lineH = MeasureTextHeight(this.Font);
+            // 摘要：3 行文字 + 上下内边距 + 边框
+            var summaryH = lineH * 3 + ScaleLogical(18);
+            // 详情标题：1 行文字 + 上内边距
+            var detailH = lineH + ScaleLogical(6);
+
             _lblResultSummary = new Label
             {
                 Dock = DockStyle.Top,
-                Height = CalculateContentHeight(this.Font, 3, 20),
-                Padding = new Padding(ScaleLogical(12)),
+                Height = summaryH,
+                Padding = new Padding(ScaleLogical(10)),
                 BackColor = System.Drawing.Color.FromArgb(239, 246, 255),
                 ForeColor = System.Drawing.Color.FromArgb(30, 64, 175),
                 BorderStyle = BorderStyle.FixedSingle,
@@ -521,8 +532,8 @@ namespace JiePinPai.Navisworks
             {
                 Text = "详细匹配结果：",
                 Dock = DockStyle.Top,
-                Height = CalculateContentHeight(this.Font, 1, 4),
-                Padding = new Padding(ScaleLogical(10), ScaleLogical(6), 0, 0),
+                Height = detailH,
+                Padding = new Padding(ScaleLogical(10), ScaleLogical(4), 0, 0),
                 ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
             };
 
@@ -1108,35 +1119,17 @@ namespace JiePinPai.Navisworks
                 modelPrefix = modelPrefixes[0];
                 protectedName = modelPrefix + "-STR";
 
-                HashSet<ModelItem> scopeItems = ExpandItems(scopeRoots);
-                diagnosticLog.LogScopeInfo(scopeRoots, scopeItems.Count);
+                diagnosticLog.LogScopeInfo(scopeRoots, scopeRoots.Count);
                 diagnosticLog.LogModelPrefixInfo(
                     modelPrefixes,
                     modelPrefix,
                     protectedName);
-                if (scopeItems.Count == 0)
-                {
-                    diagnosticLog.LogDecision("Blocked: scopeItems count is 0.");
-                    MessageBox.Show(this,
-                        "选定范围为空，已取消执行。",
-                        "傑出品·搜索范围",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
 
-                List<SearchResult> rawResults = ModelItemMatcher.MatchAll(_doc, _conditions);
-                results = FilterResultsToScope(
-                    rawResults,
-                    scopeItems,
-                    out int rawResultCount,
-                    out int matchedItemsInScopeCount,
-                    out int outOfScopeCount);
+                results = ModelItemMatcher.MatchAll(
+                    _doc, scopeRoots, _conditions);
 
                 diagnosticLog.LogXmlScopeResultStats(
-                    rawResultCount,
-                    matchedItemsInScopeCount,
-                    outOfScopeCount);
+                    results.Count, 0, 0);
 
                 List<ModelItem> matchedItemsInScope =
                     MergeUniqueItems(results.SelectMany(r => r.MatchedItems));
@@ -1146,8 +1139,19 @@ namespace JiePinPai.Navisworks
 
                 ShowResults(results, totalMatched, matchedConds, unmatchedConds);
 
-                ProtectedKeepResult protectedKeepResult =
-                    ProtectedKeepService.FindProtectedItems(_doc, protectedName);
+                ProtectedKeepResult protectedKeepResult;
+                ModelItem protectedNode = scopeRoots.Find(
+                    r => string.Equals(r.DisplayName, protectedName, StringComparison.Ordinal));
+                if (protectedNode != null)
+                {
+                    protectedKeepResult = ProtectedKeepService.BuildFromNode(
+                        protectedName, protectedNode);
+                }
+                else
+                {
+                    protectedKeepResult = ProtectedKeepService.FindProtectedItems(
+                        _doc, protectedName);
+                }
                 diagnosticLog.LogProtectedNodeStats(
                     protectedKeepResult.TargetNodeName,
                     protectedKeepResult.Found,

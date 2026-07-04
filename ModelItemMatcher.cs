@@ -54,17 +54,23 @@ namespace JiePinPai.Navisworks
             IEnumerable<ModelItem> scopeItems)
         {
             // ── 阶段 0：预发现——为没有分类的条件找出正确的分类名 ──
-            // key=属性 display name, value=分类 display name
             var categoryCache = new Dictionary<string, string>();
             DiscoverCategories(doc, conditions, categoryCache);
 
+            // ── 预构建 scope 集合（避免每轮 CopyFrom 都转换）──
+            ModelItemCollection scopeCollection = null;
+            if (scopeItems != null)
+            {
+                scopeCollection = new ModelItemCollection();
+                foreach (ModelItem item in scopeItems)
+                    scopeCollection.Add(item);
+            }
+
             // ── 阶段 1：搜索 ──
             var results = new List<SearchResult>(conditions.Count);
-            int runningTotal = 0;
 
             foreach (var cond in conditions)
             {
-                // 构建 Navisworks 原生 SearchCondition
                 var navisCond = BuildNavisCondition(cond, categoryCache);
                 if (navisCond == null)
                 {
@@ -72,11 +78,10 @@ namespace JiePinPai.Navisworks
                     continue;
                 }
 
-                // 配置并执行 Search
                 using (var search = new Search())
                 {
-                    if (scopeItems != null)
-                        search.Selection.CopyFrom(scopeItems);
+                    if (scopeCollection != null)
+                        search.Selection.CopyFrom(scopeCollection);
                     else
                         search.Selection.SelectAll();
 
@@ -90,8 +95,6 @@ namespace JiePinPai.Navisworks
                         MatchCount = matchedItems.Count,
                         MatchedItems = matchedItems,
                     });
-
-                    runningTotal += matchedItems.Count;
                 }
             }
 
