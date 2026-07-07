@@ -1,0 +1,62 @@
+# 傑出品 Navisworks 查找插件
+
+Navisworks Manage 2023 .NET Framework 4.8 插件，读取 XML 查找条件，通过原生 Search API 在三维模型中搜索对象并选中。
+
+## 技术栈
+
+| 项 | 值 |
+|---|-----|
+| Navisworks | Manage 2023 (`F:\Navisworks\Navisworks Manage 2023\`) |
+| .NET | Framework 4.8, x64 |
+| 语言 | C# 7.3 (WinForms) |
+| 构建 | `dotnet build` (MSBuild 17.14) |
+
+## 构建
+
+```powershell
+$env:PATH = "C:\Users\BOY\AppData\Local\Microsoft\dotnet;" + $env:PATH
+dotnet build NavisworksPlugin.csproj -c Release
+```
+
+## 部署
+
+```powershell
+Copy-Item bin\Release\傑出品NavisworksPlugin.dll `
+  "F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\" -Force
+```
+
+重启 Navisworks 生效。
+
+## 项目结构
+
+```
+NavisworksPlugin.csproj    — .NET Framework 4.8 x64
+PluginEntry.cs             — AddInPlugin 入口 → 打开 SearchDialog
+SearchDialog.cs            — ★ 主对话框 (3 选项卡 + 底部按钮)
+XmlSearchParser.cs         — 解析 Navisworks exchange XML
+SearchCondition.cs         — 条件 POCO
+SearchResult.cs            — 结果 POCO
+ModelItemMatcher.cs        — 匹配引擎 (原生 Search.FindAll API)
+SelectionService.cs        — 选中 + 创建 SelectionSet
+HideService.cs             — 隐藏未选中 (COM)
+LogService.cs              — UTF-8 查找日志 + 诊断日志
+```
+
+## 关键架构决策
+
+- **Navisworks 原生 Search API** — `Search.FindAll()` 在 C++ 引擎层执行，不通过 COM 手动遍历（100~1000x 性能差异）
+- **SelectionSet 而非自定义集合** — 复用 Navisworks 原生 SelectionSet API，用户已熟悉其操作方式。模式：`new SelectionSet(collection)` + `doc.SelectionSets.AddCopy()` + `selectionSet.Dispose()`
+- **STR 节点保护** — BFS 从 RootItem 按 DisplayName 查找 `{prefix}-STR`，命中即停（从遍历 60K 节点降为 3-4 次比较）
+- **搜索后选中再隐藏** — 两段式安全设计，匹配数为 0 时禁止隐藏
+
+## 禁止事项
+
+- ❌ `SelectionSet.Add()` — API 不存在，用构造函数注入
+- ❌ `Document.SelectionSets.Add()` — API 不存在，用 `AddCopy(SavedItem)`
+- ❌ 手动 COM 遍历 — 必须用原生 Search API
+- ❌ 插件 DLL 放 Navisworks 根目录 → HRESULT:0x80131040
+- ❌ 不要 `ExpandItems` / `FilterResultsToScope` / `GetAllDescendants` — 已删除的死代码
+
+## 当前分支
+
+`fix/restore-base` (本地开发分支，与 master 同步)
