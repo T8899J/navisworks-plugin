@@ -92,5 +92,42 @@ namespace JiePinPai.Navisworks
 
             return selectionList;
         }
+
+        /// <summary>
+        /// 将扁平无结构的对象集合持久化为 Navisworks 选择集（SelectionSet）。
+        /// 用户可在 Navisworks「集合」面板右键选择集 →「选择」→ 批量修改属性。
+        /// </summary>
+        /// <param name="doc">当前 Navisworks 文档。</param>
+        /// <param name="name">选择集显示名称。</param>
+        /// <param name="items">要放入选择集的 ModelItem 集合（自动去重）。</param>
+        public static void CreateSelectionSet(
+            Document doc,
+            string name,
+            IEnumerable<ModelItem> items)
+        {
+            var uniqueItems = new HashSet<ModelItem>();
+            foreach (ModelItem item in items ?? Enumerable.Empty<ModelItem>())
+            {
+                if (item != null)
+                    uniqueItems.Add(item);
+            }
+
+            if (uniqueItems.Count == 0)
+                return;
+
+            using (var collection = new ModelItemCollection())
+            {
+                foreach (ModelItem item in uniqueItems)
+                    collection.Add(item);
+
+                var selectionSet = new SelectionSet(collection)
+                {
+                    DisplayName = name
+                };
+
+                doc.SelectionSets.AddCopy(selectionSet);
+                selectionSet.Dispose();
+            }
+        }
     }
 }

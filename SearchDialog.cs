@@ -37,6 +37,7 @@ namespace JiePinPai.Navisworks
         private ListBox _lstResultDetails;
         private Button _btnSearch;
         private Button _btnExportResults;
+        private Button _btnCreateSelectionSet;
         private Button _btnClose;
 
         // ── 公共操作按钮 ──
@@ -55,6 +56,7 @@ namespace JiePinPai.Navisworks
         private List<SearchResult> _lastResults;
         private int _lastTotalMatched;
         private bool _lastHideExecuted;
+        private string _currentModelPrefix;
 
         // ── 列索引常量 ──
         private const int COL_CATEGORY = 0;
@@ -166,6 +168,25 @@ namespace JiePinPai.Navisworks
             };
             _btnExportResults.Click += BtnExportResults_Click;
 
+            _btnCreateSelectionSet = new Button
+            {
+                Text = "创建选择集",
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                FlatAppearance =
+                {
+                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
+                    BorderSize = 1,
+                    MouseOverBackColor = System.Drawing.Color.FromArgb(239, 246, 255),
+                },
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                Font = btnFont,
+                UseVisualStyleBackColor = false,
+                Enabled = false,
+            };
+            _btnCreateSelectionSet.Click += BtnCreateSelectionSet_Click;
+
             _btnClose = new Button
             {
                 Text = "关闭",
@@ -187,7 +208,7 @@ namespace JiePinPai.Navisworks
             var bottomLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 5,
+                ColumnCount = 7,
                 RowCount = 1,
                 Padding = new Padding(0),
             };
@@ -195,12 +216,15 @@ namespace JiePinPai.Navisworks
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(108)));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(84)));
             bottomLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             bottomLayout.Controls.Add(_btnSearch, 0, 0);
             bottomLayout.Controls.Add(_btnExportResults, 2, 0);
-            bottomLayout.Controls.Add(_btnClose, 4, 0);
+            bottomLayout.Controls.Add(_btnCreateSelectionSet, 4, 0);
+            bottomLayout.Controls.Add(_btnClose, 6, 0);
             bottomPanel.Controls.Add(bottomLayout);
 
             // ── 主布局 ──
@@ -851,7 +875,7 @@ namespace JiePinPai.Navisworks
             var form = new Form
             {
                 Text = "使用说明",
-                ClientSize = new Size(ScaleLogical(760), ScaleLogical(620)),
+                ClientSize = new Size(ScaleLogical(760), ScaleLogical(600)),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent,
                 MaximizeBox = false,
@@ -860,6 +884,153 @@ namespace JiePinPai.Navisworks
                 Font = new Font("Microsoft YaHei UI", 9F),
             };
 
+            var boldFont = new Font(form.Font, FontStyle.Bold);
+            var titleFont = new Font(form.Font.FontFamily, 11F, FontStyle.Bold);
+            form.Disposed += (s, e) =>
+            {
+                boldFont.Dispose();
+                titleFont.Dispose();
+            };
+
+            // ★ 核心优化：单控件 RichTextBox 替代 85+ 个 Label/Panel
+            // 消除 GDI 句柄风暴 + FlowLayoutPanel AutoSize 布局重算
+            var rtb = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                BackColor = System.Drawing.Color.White,
+                Font = form.Font,
+                ForeColor = System.Drawing.Color.FromArgb(33, 37, 41),
+                DetectUrls = false,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
+                Margin = new Padding(ScaleLogical(18)),
+            };
+
+            void H(string text)
+            {
+                int start = rtb.TextLength;
+                rtb.AppendText(text + "\n");
+                rtb.Select(start, text.Length);
+                rtb.SelectionFont = boldFont;
+            }
+            void T(string text)
+            {
+                int start = rtb.TextLength;
+                rtb.AppendText(text + "\n");
+                rtb.Select(start, text.Length);
+                rtb.SelectionFont = rtb.Font;
+            }
+            void G() => rtb.AppendText("\n");
+
+            // ── 构建内容 ──
+            {
+                int start = rtb.TextLength;
+                rtb.AppendText("傑出品 Navisworks 查找插件 — 使用说明\n");
+                rtb.Select(start, rtb.TextLength - start - 1);
+                rtb.SelectionFont = titleFont;
+            }
+            G();
+
+            H("▎插件简介");
+            T("「傑出品查找」用于在 Navisworks 三维模型中按属性值搜索对象。");
+            T("支持导入 XML 查找文件或手动填写条件，可执行精确匹配（equals）和模糊匹配（contains）。");
+            T("核心流程：搜索 → 选中 → 隐藏未选中 / 创建选择集 / 导出结果。");
+            G();
+
+            // ── 操作步骤 ──
+            H("━━━ 操作步骤 ━━━");
+            G();
+
+            H("第一步：打开模型并选择搜索范围");
+            T("1. 在 Navisworks 中打开模型（.nwd / .nwf / .nwc）。");
+            T("2. 在左侧「选择树」中单击选中要搜索的模型节点");
+            T("   （通常是以 TS-MXXXX-... 开头的根节点，代表一个模型）。");
+            T("3. 如需只搜索某个子系统，选中对应的子节点即可。");
+            T("4. 不选范围时点击搜索会提示你选择。");
+            G();
+
+            H("第二步：打开插件");
+            T("点击 Navisworks 顶部 Add-Ins 选项卡 → 工具栏中的「傑出品查找」按钮。");
+            T("弹出主对话框，包含三个选项卡：搜索条件、选项、结果。");
+            G();
+
+            H("第三步：准备搜索条件");
+            T("");
+            T("  【方式一：导入 XML（推荐）】");
+            T("  点击工具栏「导入」→ 选择 Python 工具生成的 .xml 查找文件 → 条件自动填入表格。");
+            T("  双击表格行可修改条件（分类、属性名、匹配方式、查询值）。");
+            T("");
+            T("  【方式二：手动添加】");
+            T("  1. 在模型中选中目标对象，打开 Navisworks「属性」窗口。");
+            T("  2. 点击插件「添加」按钮，对照属性面板填写：");
+            T("     · 分类（可选）：属性所在的分组名，如 Item、Element、SmartPlant 3D。");
+            T("       不确定可留空，插件会自动识别。");
+            T("     · 属性名（必填）：属性面板左侧的名称，如 名称、System Path。");
+            T("     · 查询值：属性面板右侧的值，如 M14-101、P-001。");
+            T("     · 匹配方式：equals = 完全相同；contains = 包含即可。");
+            T("");
+            T("  【填表示例】");
+            T("  · 属性面板显示 Item / 名称 = M14-101");
+            T("    填：分类=Item，属性名=名称，匹配方式=equals，查询值=M14-101");
+            T("  · 属性面板显示 SmartPlant 3D / System Path = Area-01/P-001/Line-A");
+            T("    填：分类=SmartPlant 3D，属性名=System Path，匹配方式=contains，查询值=P-001");
+            T("");
+            T("  【工具栏按钮】");
+            T("  导入：从 XML 加载条件 | 导出：保存当前条件为 XML | 添加/删除/清空：管理条件。");
+            G();
+
+            H("第四步：选择搜索模式（切换到「选项」页）");
+            T("");
+            T("  【模式 A：仅查找并选中】（默认）");
+            T("  搜索后选中匹配对象，不做隐藏。适合快速定位查看。");
+            T("");
+            T("  【模式 B：查找 + 隐藏未选中】");
+            T("  搜索并选中后弹窗确认，确认后隐藏不相关的对象，只保留匹配项和 STR 结构节点。");
+            T("  匹配数为 0 时自动拒绝隐藏，防止误隐藏整个模型。");
+            T("");
+            T("  【诊断日志（默认关闭）】勾选后每次搜索输出详细诊断文件。日常无需开启，排查问题时使用。");
+            G();
+
+            H("第五步：执行搜索");
+            T("确认条件表格不为空、选择树中已选中范围 → 点击底部蓝色「执行搜索」按钮。");
+            T("大模型可能需数秒，插件不会卡死 Navisworks。完成后自动切换到「结果」页。");
+            G();
+
+            H("第六步：查看结果与后续操作");
+            T("");
+            T("  【结果摘要（蓝色区域）】条件总数、找到/未找到条数、总匹配对象数。");
+            T("  【详细列表】[✓] 匹配成功  [✗] 未匹配到。");
+            T("");
+            T("  搜索完成后，底部按钮启用：");
+            T("  · 导出结果 → 将匹配结果保存为 CSV/TXT 文件。");
+            T("  · 创建选择集 → 将匹配对象持久化为 Navisworks「集合」面板中的选择集。");
+            T("    右键该选择集 →「选择」后可批量修改颜色、透明度、隐藏等属性。");
+            T("    选择集会随 .nwf 文件保存，关闭插件后仍可使用。");
+            T("  · 隐藏未选中（仅模式 B 生效）→ 弹窗确认后隐藏不相关对象。");
+            G();
+
+            // ── 常见问题 ──
+            H("━━━ 常见问题 ━━━");
+            G();
+
+            H("Q: 搜索不到任何对象？");
+            T("A: 检查属性名是否与 Navisworks 属性面板完全一致（含空格、大小写）。");
+            T("   确认查询值前后无多余空格、搜索范围正确。可开启诊断日志排查。");
+            G();
+
+            H("Q: 分类（Category）要不要填？");
+            T("A: 可不填，插件会自动扫描模型发现分类。模型很大且属性名在多个分类都存在时，手动填写可提高准确性。");
+            G();
+
+            H("Q: equals 和 contains 怎么选？");
+            T("A: equals = 完全相等（适合编号/名称）；contains = 包含即可（适合路径/描述中的关键词）。");
+            G();
+
+            H("Q: 隐藏错了怎么恢复？");
+            T("A: Navisworks「常用」选项卡 →「全部显示」。建议隐藏前先用模式 A 确认搜索结果。");
+
+            // ── 布局 ──
             var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -869,114 +1040,6 @@ namespace JiePinPai.Navisworks
             };
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(70)));
-
-            var guidePanel = new Panel
-            {
-                Dock = DockStyle.Fill,
-                AutoScroll = true,
-                BorderStyle = BorderStyle.FixedSingle,
-                BackColor = System.Drawing.Color.White,
-                Padding = new Padding(ScaleLogical(18)),
-            };
-            var guideContent = new FlowLayoutPanel
-            {
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                Location = new Point(guidePanel.Padding.Left, guidePanel.Padding.Top),
-                Margin = new Padding(0),
-                Padding = new Padding(0),
-                BackColor = System.Drawing.Color.White,
-            };
-            guidePanel.Controls.Add(guideContent);
-
-            var guideLabels = new List<Label>();
-            var guideHeadingFont = new Font(form.Font, FontStyle.Bold);
-            form.Disposed += (s, e) => guideHeadingFont.Dispose();
-
-            Label MakeGuideLabel(string text, Font font, System.Drawing.Color color, Padding margin)
-            {
-                var label = new Label
-                {
-                    AutoSize = true,
-                    Text = text,
-                    Font = font,
-                    ForeColor = color,
-                    BackColor = System.Drawing.Color.White,
-                    Margin = margin,
-                };
-                guideLabels.Add(label);
-                return label;
-            }
-
-            void AddGuideSection(string title, params string[] lines)
-            {
-                guideContent.Controls.Add(MakeGuideLabel(
-                    title,
-                    guideHeadingFont,
-                    System.Drawing.Color.FromArgb(44, 62, 80),
-                    new Padding(0, 0, 0, ScaleLogical(8))));
-
-                foreach (var line in lines)
-                {
-                    guideContent.Controls.Add(MakeGuideLabel(
-                        line,
-                        form.Font,
-                        System.Drawing.Color.FromArgb(33, 37, 41),
-                        new Padding(0, 0, 0, ScaleLogical(6))));
-                }
-
-                guideContent.Controls.Add(new Panel
-                {
-                    Width = ScaleLogical(1),
-                    Height = ScaleLogical(12),
-                    Margin = new Padding(0),
-                    BackColor = System.Drawing.Color.White,
-                });
-            }
-
-            AddGuideSection("使用流程",
-                "1. 在 Navisworks 里打开模型。",
-                "2. 如果只想查某个范围，先在选择树里选中该范围；否则默认查整个模型。",
-                "3. 在“搜索条件”页导入 XML，或点击“添加”手动填写一条条件。",
-                "4. 点击“执行搜索”，插件会选中匹配对象并在“结果”页显示汇总。",
-                "5. 如果选择隐藏模式，确认后才会隐藏未选中对象；匹配数为 0 时不会隐藏。");
-
-            AddGuideSection("手动添加条件怎么填",
-                "1. 先在模型中选中一个你想查找的目标对象。",
-                "2. 打开 Navisworks 的“属性”窗口。",
-                "3. 分类：填写属性窗口里的分组/选项卡名称，例如 Item、Element、SmartPlant 3D。不确定时可以留空。",
-                "4. 属性名：填写属性面板左侧的名称，例如 名称、System Path、Tag。",
-                "5. 查询值：填写属性面板右侧要找的值，例如 M14-101、P-001。",
-                "6. 匹配方式：equals 表示完全相同；contains 表示包含这段文字即可。");
-
-            AddGuideSection("示例一：按名称精确查找",
-                "属性面板显示：Item / 名称 = M14-101",
-                "填写：分类 = Item，属性名 = 名称，匹配方式 = equals，查询值 = M14-101");
-
-            AddGuideSection("示例二：按路径包含查找",
-                "属性面板显示：SmartPlant 3D / System Path = Area-01/P-001/Line-A",
-                "填写：分类 = SmartPlant 3D，属性名 = System Path，匹配方式 = contains，查询值 = P-001");
-
-            AddGuideSection("常见注意点",
-                "- 属性名必须和 Navisworks 属性面板显示一致。",
-                "- 查询值前后不要多打空格。",
-                "- 分类不确定时先留空，插件会尝试自动识别。",
-                "- 导入 XML 后也可以双击表格行修改条件。");
-
-            void UpdateGuideLabelWidth()
-            {
-                var contentWidth = Math.Max(
-                    ScaleLogical(320),
-                    guidePanel.ClientSize.Width - guidePanel.Padding.Horizontal - ScaleLogical(24));
-                guideContent.Width = contentWidth;
-                foreach (var label in guideLabels)
-                {
-                    label.MaximumSize = new Size(contentWidth, 0);
-                }
-            }
-            guidePanel.Resize += (s, e) => UpdateGuideLabelWidth();
 
             var buttonPanel = new TableLayoutPanel
             {
@@ -1000,16 +1063,12 @@ namespace JiePinPai.Navisworks
             };
             buttonPanel.Controls.Add(btnClose, 1, 0);
 
-            layout.Controls.Add(guidePanel, 0, 0);
+            layout.Controls.Add(rtb, 0, 0);
             layout.Controls.Add(buttonPanel, 0, 1);
             form.Controls.Add(layout);
             form.AcceptButton = btnClose;
             form.CancelButton = btnClose;
-            form.Shown += (s, e) =>
-            {
-                UpdateGuideLabelWidth();
-                btnClose.Focus();
-            };
+            form.Shown += (s, e) => btnClose.Focus();
             form.ShowDialog(this);
         }
 
@@ -1133,6 +1192,7 @@ namespace JiePinPai.Navisworks
                 }
 
                 modelPrefix = modelPrefixes[0];
+                _currentModelPrefix = modelPrefix;
                 protectedName = modelPrefix + "-STR";
 
                 diagnosticLog?.LogScopeInfo(scopeRoots, scopeRoots.Count);
@@ -1296,6 +1356,7 @@ namespace JiePinPai.Navisworks
                 _lastTotalMatched = totalMatched;
                 _lastHideExecuted = hideExecuted;
                 _btnExportResults.Enabled = true;
+                _btnCreateSelectionSet.Enabled = true;
                 _tabControl.SelectedTab = _tabResults;
             }
             catch (Exception ex)
@@ -1380,6 +1441,50 @@ namespace JiePinPai.Navisworks
                             "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
+            }
+        }
+
+        private void BtnCreateSelectionSet_Click(object sender, EventArgs e)
+        {
+            if (_lastResults == null || _lastResults.Count == 0) return;
+
+            try
+            {
+                var flatItems = MergeUniqueItems(
+                    _lastResults.SelectMany(r => r.MatchedItems));
+
+                if (flatItems.Count == 0)
+                {
+                    MessageBox.Show(this,
+                        "没有匹配到的对象，无法创建选择集。",
+                        "傑出品·选择集",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                string modelPrefix = _currentModelPrefix ?? "查找";
+                string setName = $"{modelPrefix}_查找结果_{DateTime.Now:yyyyMMdd_HHmmss}";
+
+                SelectionService.CreateSelectionSet(
+                    _doc, setName, flatItems);
+
+                MessageBox.Show(this,
+                    $"选择集已创建：\n\n" +
+                    $"名称：{setName}\n" +
+                    $"包含对象：{flatItems.Count} 个\n\n" +
+                    "请在 Navisworks「集合」面板中右键该选择集 →「选择」→ 批量修改。",
+                    "傑出品·选择集完成",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this,
+                    "创建选择集失败：\n" + ex.Message,
+                    "错误",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
             }
         }
 
