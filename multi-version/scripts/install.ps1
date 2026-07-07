@@ -1,10 +1,10 @@
-param(
+﻿param(
     [string]$Version = "2023",
     [switch]$AllVersions,
     [switch]$ListVersions
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 # ── 版本号映射：年份 → Autodesk 内部版本号 ──
 $VersionMap = @{
@@ -15,7 +15,7 @@ $VersionMap = @{
 
 # ── 路径解析 ──
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$rootDir = Resolve-Path (Join-Path $scriptDir "..")
+$rootDir = (Get-Item (Join-Path $scriptDir "..")).FullName
 $binDir = Join-Path $rootDir "bin\Release"
 $manifestDir = Join-Path $rootDir "manifests"
 
@@ -114,8 +114,8 @@ function Install-Version([string]$Year) {
     Copy-Item -LiteralPath $dllPath -Destination (Join-Path $targetDir "傑出品NavisworksPlugin.dll") -Force
     Write-Host "  [OK] DLL installed"
 
-    Copy-Item -LiteralPath $manifestPath.FullName -Destination (Join-Path $targetDir $manifestPath.Name) -Force
-    Write-Host "  [OK] Manifest installed ($($manifestPath.Name))"
+    Copy-Item -LiteralPath $manifestPath.FullName -Destination (Join-Path $targetDir "傑出品NavisworksPlugin.plugin") -Force
+    Write-Host "  [OK] Manifest installed (from $($manifestPath.Name) -> 傑出品NavisworksPlugin.plugin)"
 
     Write-Host "  [DONE] Restart Navisworks Manage $Year to load the plugin." -ForegroundColor Green
     return $true

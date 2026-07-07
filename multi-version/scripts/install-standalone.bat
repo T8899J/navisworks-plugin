@@ -125,7 +125,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-copy /y "%PKG_DIR%傑出品NavisworksPlugin_2021.plugin" "!TARGET_DIR!\" >nul 2>&1
+copy /y "%PKG_DIR%傑出品NavisworksPlugin_2021.plugin" "!TARGET_DIR!\傑出品NavisworksPlugin.plugin" >nul 2>&1
 
 echo [4/4] 安装完成！
 
