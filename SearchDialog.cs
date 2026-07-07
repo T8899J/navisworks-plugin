@@ -872,39 +872,42 @@ namespace JiePinPai.Navisworks
 
         private void ShowUsageGuideDialog()
         {
+            var bodyFont = new Font("Microsoft YaHei UI", 10F);
+            var boldFont = new Font(bodyFont, FontStyle.Bold);
+            var titleFont = new Font(bodyFont.FontFamily, 14F, FontStyle.Bold);
+            var contentPad = ScaleLogical(22);
+
             var form = new Form
             {
-                Text = "使用说明",
-                ClientSize = new Size(ScaleLogical(760), ScaleLogical(600)),
+                Text = "使用说明 — 傑出品 Navisworks 查找插件",
+                ClientSize = new Size(ScaleLogical(780), ScaleLogical(600)),
                 FormBorderStyle = FormBorderStyle.FixedDialog,
                 StartPosition = FormStartPosition.CenterParent,
                 MaximizeBox = false,
                 MinimizeBox = false,
                 ShowInTaskbar = false,
-                Font = new Font("Microsoft YaHei UI", 9F),
+                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
+                Font = bodyFont,
             };
-
-            var boldFont = new Font(form.Font, FontStyle.Bold);
-            var titleFont = new Font(form.Font.FontFamily, 11F, FontStyle.Bold);
             form.Disposed += (s, e) =>
             {
                 boldFont.Dispose();
                 titleFont.Dispose();
+                bodyFont.Dispose();
             };
 
-            // ★ 核心优化：单控件 RichTextBox 替代 85+ 个 Label/Panel
-            // 消除 GDI 句柄风暴 + FlowLayoutPanel AutoSize 布局重算
+            // RichTextBox：单控件承载全部文本，仅格式化标题/正文两级
             var rtb = new RichTextBox
             {
-                Dock = DockStyle.Fill,
                 ReadOnly = true,
                 BorderStyle = BorderStyle.None,
                 BackColor = System.Drawing.Color.White,
-                Font = form.Font,
-                ForeColor = System.Drawing.Color.FromArgb(33, 37, 41),
+                Font = bodyFont,
+                ForeColor = System.Drawing.Color.FromArgb(30, 41, 59),
                 DetectUrls = false,
                 ScrollBars = RichTextBoxScrollBars.Vertical,
-                Margin = new Padding(ScaleLogical(18)),
+                WordWrap = true,
+                Multiline = true,
             };
 
             void H(string text)
@@ -938,7 +941,6 @@ namespace JiePinPai.Navisworks
             T("核心流程：搜索 → 选中 → 隐藏未选中 / 创建选择集 / 导出结果。");
             G();
 
-            // ── 操作步骤 ──
             H("━━━ 操作步骤 ━━━");
             G();
 
@@ -1010,7 +1012,6 @@ namespace JiePinPai.Navisworks
             T("  · 隐藏未选中（仅模式 B 生效）→ 弹窗确认后隐藏不相关对象。");
             G();
 
-            // ── 常见问题 ──
             H("━━━ 常见问题 ━━━");
             G();
 
@@ -1030,41 +1031,65 @@ namespace JiePinPai.Navisworks
             H("Q: 隐藏错了怎么恢复？");
             T("A: Navisworks「常用」选项卡 →「全部显示」。建议隐藏前先用模式 A 确认搜索结果。");
 
-            // ── 布局 ──
+            // ── 用 Panel 包裹 RichTextBox → 提供可见边界 + 内边距 ──
+            var contentCard = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = System.Drawing.Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(contentPad),
+                Margin = new Padding(0),
+            };
+            contentCard.Controls.Add(rtb);
+            rtb.Dock = DockStyle.Fill;
+
+            // ── 关闭按钮 ──
+            var btnFont = new Font(bodyFont, FontStyle.Bold);
+            var btnClose = new Button
+            {
+                Text = "关闭",
+                FlatStyle = FlatStyle.Flat,
+                FlatAppearance =
+                {
+                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
+                    BorderSize = 1,
+                    MouseOverBackColor = System.Drawing.Color.FromArgb(248, 250, 252),
+                },
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                Font = btnFont,
+                UseVisualStyleBackColor = false,
+                Size = new Size(ScaleLogical(110), CalculateButtonHeight(btnFont) + ScaleLogical(8)),
+                DialogResult = DialogResult.OK,
+            };
+
+            // ── 布局：内容卡片在上，按钮在右下 ──
             var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 Padding = new Padding(ScaleLogical(14)),
                 ColumnCount = 1,
                 RowCount = 2,
+                BackColor = form.BackColor,
             };
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(70)));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, btnClose.Height + ScaleLogical(20)));
 
-            var buttonPanel = new TableLayoutPanel
+            var buttonRow = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(0, ScaleLogical(12), 0, ScaleLogical(4)),
                 ColumnCount = 2,
                 RowCount = 1,
+                BackColor = form.BackColor,
             };
-            var closeButtonWidth = ScaleLogical(104);
-            var closeButtonHeight = CalculateButtonHeight(form.Font) + ScaleLogical(8);
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, closeButtonWidth));
-            buttonPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, closeButtonHeight));
-            var btnClose = new Button
-            {
-                Text = "关闭",
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0),
-                Size = new Size(closeButtonWidth, closeButtonHeight),
-                DialogResult = DialogResult.OK,
-            };
-            buttonPanel.Controls.Add(btnClose, 1, 0);
+            buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, btnClose.Width));
+            buttonRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            buttonRow.Controls.Add(btnClose, 1, 0);
+            btnClose.Anchor = AnchorStyles.Right;
 
-            layout.Controls.Add(rtb, 0, 0);
-            layout.Controls.Add(buttonPanel, 0, 1);
+            layout.Controls.Add(contentCard, 0, 0);
+            layout.Controls.Add(buttonRow, 0, 1);
             form.Controls.Add(layout);
             form.AcceptButton = btnClose;
             form.CancelButton = btnClose;
