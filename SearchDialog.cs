@@ -1619,70 +1619,6 @@ namespace JiePinPai.Navisworks
             return prefixes.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
-        private static HashSet<ModelItem> ExpandItems(IEnumerable<ModelItem> rootItems)
-        {
-            var result = new HashSet<ModelItem>();
-            var stack = new Stack<ModelItem>();
-
-            foreach (ModelItem item in rootItems ?? Enumerable.Empty<ModelItem>())
-            {
-                if (item != null)
-                    stack.Push(item);
-            }
-
-            while (stack.Count > 0)
-            {
-                ModelItem current = stack.Pop();
-                if (!result.Add(current))
-                    continue;
-
-                foreach (ModelItem child in current.Children)
-                    stack.Push(child);
-            }
-
-            return result;
-        }
-
-        private static List<SearchResult> FilterResultsToScope(
-            List<SearchResult> rawResults,
-            HashSet<ModelItem> scopeItems,
-            out int rawResultCount,
-            out int matchedItemsInScopeCount,
-            out int outOfScopeCount)
-        {
-            rawResultCount = 0;
-            matchedItemsInScopeCount = 0;
-            outOfScopeCount = 0;
-
-            var filteredResults = new List<SearchResult>();
-            foreach (SearchResult result in rawResults ?? new List<SearchResult>())
-            {
-                var matchedItems = new List<ModelItem>();
-                foreach (ModelItem item in result.MatchedItems)
-                {
-                    rawResultCount++;
-                    if (scopeItems.Contains(item))
-                    {
-                        matchedItems.Add(item);
-                        matchedItemsInScopeCount++;
-                    }
-                    else
-                    {
-                        outOfScopeCount++;
-                    }
-                }
-
-                filteredResults.Add(new SearchResult
-                {
-                    QueryValue = result.QueryValue,
-                    MatchCount = matchedItems.Count,
-                    MatchedItems = matchedItems,
-                });
-            }
-
-            return filteredResults;
-        }
-
         private static List<ModelItem> MergeUniqueItems(params IEnumerable<ModelItem>[] groups)
         {
             var uniqueItems = new HashSet<ModelItem>();
@@ -1696,20 +1632,6 @@ namespace JiePinPai.Navisworks
             }
 
             return uniqueItems.ToList();
-        }
-
-        private static List<ModelItem> GetAllDescendants(ModelItemCollection items)
-        {
-            var result = new List<ModelItem>();
-            var stack = new Stack<ModelItem>();
-            foreach (ModelItem item in items) stack.Push(item);
-            while (stack.Count > 0)
-            {
-                var current = stack.Pop();
-                result.Add(current);
-                foreach (ModelItem child in current.Children) stack.Push(child);
-            }
-            return result;
         }
 
         #endregion
