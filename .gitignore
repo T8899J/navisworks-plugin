@@ -21,3 +21,6 @@ obj/
 # OS
 Thumbs.db
 Desktop.ini
+multi-version/bin/
+multi-version/release/
+multi-version/obj/

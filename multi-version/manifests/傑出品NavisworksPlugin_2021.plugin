@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PluginContainer>
+  <Plugin id="JiePinPai_SearchPlugin" vendor="JiePinPai" description="傑出品 Navisworks 查找插件">
+    <Tab id="JiePinPai.RibbonTab" displayName="傑出品">
+      <Panel id="JiePinPai.Panel" displayName="查找">
+        <Button pluginId="JiePinPai_SearchPlugin"
+                id="JiePinPai.SearchButton"
+                displayName="傑出品查找"
+                toolTip="读取傑出品 XML，在当前模型执行查找并选中匹配对象"
+                executeInMainThread="true" />
+      </Panel>
+    </Tab>
+  </Plugin>
+</PluginContainer>
