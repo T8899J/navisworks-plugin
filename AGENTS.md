@@ -1,4 +1,4 @@
-# 傑出品 Navisworks 查找插件
+<!-- ⚠ AUTO-GENERATED from CLAUDE.md — edit CLAUDE.md, re-copy to AGENTS.md after -->
 
 Navisworks Manage 2023 .NET Framework 4.8 插件，读取 XML 查找条件，通过原生 Search API 在三维模型中搜索对象并选中。
 

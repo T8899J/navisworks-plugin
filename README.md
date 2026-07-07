@@ -70,6 +70,18 @@ Python 工具生成 XML  →  用户在 Navisworks 打开模型
 - 文件选择对话框强制置顶（不会被 Navisworks 主窗口挡住）
 - 全面的异常处理（文档未打开、XML 格式错误、无匹配等场景均有中文提示）
 - **不卡死** — Search API 内部处理消息泵，Navisworks 保持响应
+- **内置使用说明** — 搜索条件页「使用说明」按钮，分步操作指南 + 常见问题
+
+### 创建选择集（v1.2 新增）
+- 搜索完成后点击「创建选择集」，将匹配对象持久化为 Navisworks 原生 SelectionSet
+- 选择集出现在 Navisworks「集合」面板，右键 →「选择」→ 批量修改属性（颜色、透明度、隐藏等）
+- 选择集随 `.nwf` 文件保存，关闭插件后仍可使用
+- 命名格式：`{模型前缀}_查找结果_{时间戳}`
+
+### 诊断日志（v1.2 新增）
+- 选项页「诊断日志」开关，默认关闭（日常搜索零开销）
+- 开启后每次搜索输出结构化诊断文件，记录：搜索模式、范围节点、模型前缀识别、每个条件的匹配统计、STR 保护节点详情、选中写入结果、隐藏执行结果
+- 日志文件保存在 DLL 同级目录，文件名包含时间戳
 
 ---
 
@@ -86,14 +98,22 @@ navisworks-plugin/
 ├── SearchCondition.cs               # 搜索条件 POCO
 ├── SearchResult.cs                  # 搜索结果 POCO
 ├── ModelItemMatcher.cs              # 匹配引擎（Navisworks 原生 Search.FindAll API 封装）
-├── SelectionService.cs              # 设置 doc.CurrentSelection
-├── HideService.cs                   # Hide Unselected（LcOwDocument COM）
+├── SelectionService.cs              # 选中 + 创建 SelectionSet（选择集）
+├── HideServiceFixed.cs              # Hide Unselected（LcOwDocument COM）
+├── ProtectedKeepService.cs          # STR 保护节点查找（BFS 快速路径）
 ├── LogService.cs                    # UTF-8 查找日志
-├── 傑出品NavisworksPlugin.plugin   # XML 清单（插件注册 + 自定义选项卡）
+├── DiagnosticLogSession.cs          # 诊断日志会话（结构化记录搜索全流程）
+├── DiagnosticLogExtensions.cs       # 诊断日志扩展方法
+├── manifests/
+│   └── 傑出品NavisworksPlugin.plugin # XML 清单（插件注册 + 自定义选项卡）
+├── scripts/
+│   └── install_2023.ps1             # PowerShell 部署脚本
 ├── build_2023.bat                   # MSBuild 编译脚本
-├── install_2023.bat                 # 部署脚本
+├── install_2023.bat                 # 部署脚本（旧版）
 ├── test_search.xml                 # 测试用搜索条件 XML
-├── .index                          # 代码索引
+├── CLAUDE.md                        # AI 助手指南
+├── AGENTS.md                        # → CLAUDE.md（同源副本）
+├── CHANGELOG.md                     # 更新日志
 └── README.md
 ```
 
@@ -102,15 +122,18 @@ navisworks-plugin/
 | 文件 | 职责 |
 |------|------|
 | `PluginEntry.cs` | 插件入口点。继承 `AddInPlugin`，`[Plugin]` + `[AddInPlugin]` 属性注册。`Execute()` 启动 SearchDialog |
-| `SearchDialog.cs` | **主对话框**。3 个选项卡：搜索条件、选项、结果。工具栏支持导入/导出 XML、添加/删除/清空搜索条件。内置条件编辑器（双击 DataGridView 行编辑）。底部按钮：执行搜索、导出结果、关闭。搜索流程：范围询问 → 匹配 → 选中 → 结果报告 → 用户确认 → 隐藏未选中 → 日志 |
+| `SearchDialog.cs` | **主对话框**。3 个选项卡：搜索条件、选项、结果。工具栏支持导入/导出 XML、添加/删除/清空搜索条件、使用说明。内置条件编辑器（双击 DataGridView 行编辑）。底部按钮：执行搜索、导出结果、创建选择集、关闭。搜索流程：范围校验 → 模型前缀识别 → 匹配 → 选中 → STR 保护 → 用户确认 → 隐藏未选中 → 日志 |
 | `XmlSearchParser.cs` | 用 `XDocument` 解析 Navisworks exchange XML，提取 `<condition>` 列表。支持 category、property、value、test 属性解析 |
-| `ModelItemMatcher.cs` | **核心匹配引擎**。使用 Navisworks 原生 `Search.FindAll()` API（C++ 引擎层执行，自带消息泵）。无 `<category>` 时通过模型采样自动发现属性所属分类。提供全模型搜索和指定范围搜索两个重载 |
+| `ModelItemMatcher.cs` | **核心匹配引擎**。使用 Navisworks 原生 `Search.FindAll()` API（C++ 引擎层执行，自带消息泵）。无 `<category>` 时通过模型采样自动发现属性所属分类。支持全模型和指定范围两种模式 |
 | `SearchCondition.cs` | 条件数据模型：`CategoryInternal`, `CategoryDisplay`, `PropertyInternal`, `PropertyDisplay`, `Test`, `Value` |
 | `SearchResult.cs` | 匹配结果数据模型：`QueryValue`, `MatchCount`, `MatchedItems` |
-| `SelectionService.cs` | 将 `List<ModelItem>` 合并为 `ModelItemCollection`，设置为 `doc.CurrentSelection` |
-| `HideService.cs` | 执行 Hide Unselected：`InvertSelection()` → `SetSelectionHidden(collection, true)` → 恢复已匹配为选中。0 匹配保护 |
-| `LogService.cs` | 写 UTF-8 日志到 XML 同级目录，记录每个条件的匹配数和汇总统计 |
-| `傑出品NavisworksPlugin.plugin` | XML 清单，定义自定义选项卡和按钮在 Navisworks 中的布局 |
+| `SelectionService.cs` | 将匹配项合并去重后设为 `doc.CurrentSelection`；`CreateSelectionSet()` 将匹配对象持久化为 Navisworks 原生选择集 |
+| `HideServiceFixed.cs` | 执行 Hide Unselected：`InvertSelection()` → `SetSelectionHidden(collection, true)` → 恢复已匹配为选中。0 匹配保护 |
+| `ProtectedKeepService.cs` | STR 结构节点保护：BFS 从 RootItem 起按 DisplayName 查找 `{prefix}-STR`，命中即停（比全模型遍历快 10000x） |
+| `LogService.cs` | 写 UTF-8 日志到 XML 同级目录，记录每个条件的匹配数和汇总统计；`CreateDiagnosticSession()` 创建诊断日志会话 |
+| `DiagnosticLogSession.cs` | 诊断日志会话对象，结构化记录搜索全流程（模式、范围、匹配、保护、隐藏），输出详细诊断文件 |
+| `DiagnosticLogExtensions.cs` | 诊断日志扩展方法，提供 `LogScopeInfo`、`LogModelPrefixInfo` 等便捷记录接口 |
+| `manifests/傑出品NavisworksPlugin.plugin` | XML 清单，定义自定义选项卡和按钮在 Navisworks 中的布局 |
 
 ---
 
@@ -233,11 +256,17 @@ F:\Navisworks\Navisworks Manage 2023\Plugins\
 navisworks-plugin\install_2023.bat
 ```
 
+或使用 PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_2023.ps1
+```
+
 ### 手动安装
 
 ```batch
 copy bin\Release\傑出品NavisworksPlugin.dll "F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\"
-copy 傑出品NavisworksPlugin.plugin "F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\"
+copy manifests\傑出品NavisworksPlugin.plugin "F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\"
 ```
 
 ### 注意事项
@@ -252,16 +281,21 @@ copy 傑出品NavisworksPlugin.plugin "F:\Navisworks\Navisworks Manage 2023\Plug
 
 1. 启动 Navisworks Manage 2023
 2. 打开模型（`.nwd` / `.nwf` / `.nwc`）
-3. 在 Add-Ins 工具栏点击 **「傑出品查找」** 按钮
-4. 弹出 **傑出品主对话框**，包含 3 个选项卡：
-   - **搜索条件** — 导入 XML / 手动添加条件 / 编辑 / 删除 / 清空
-   - **选项** — 搜索后隐藏 / 日志生成开关
+3. 在左侧「选择树」中选中要搜索的模型节点（必须，不选会提示）
+4. 在 Add-Ins 工具栏点击 **「傑出品查找」** 按钮
+5. 弹出 **傑出品主对话框**，包含 3 个选项卡：
+   - **搜索条件** — 导入 XML / 手动添加条件 / 编辑 / 删除 / 清空 / 使用说明
+   - **选项** — 搜索模式（仅选中 / 选中后隐藏）、诊断日志开关
    - **结果** — 搜索完成后显示匹配汇总和详情
-5. 点击 **导入** 选择 `.xml` 文件，或手动 **添加** 条件（双击行编辑）
-6. 点击 **执行搜索**
-7. 如有预选对象，弹窗询问搜索范围
-8. 结果显示在「结果」选项卡，询问是否隐藏未选中
-9. 日志自动保存到 XML 同级目录
+6. 点击 **导入** 选择 `.xml` 文件，或手动 **添加** 条件（双击行编辑）
+7. 点击 **执行搜索**
+8. 结果显示在「结果」选项卡
+   - 模式 A：弹窗显示命中统计
+   - 模式 B：弹窗询问是否隐藏未选中
+9. 搜索完成后底部按钮启用：
+   - **导出结果** — 保存为 CSV 或 TXT
+   - **创建选择集** — 持久化为 Navisworks 原生选择集
+10. 日志自动保存到 XML 同级目录
 
 ---
 
@@ -387,7 +421,7 @@ A: 确认 `F:\Navisworks\Navisworks Manage 2023\Autodesk.Navisworks.Api.dll` 存
 | **第三版** | 性能优化（原生 Search API 替代手动 COM 遍历） | ✅ 已完成 |
 | **第四版** | Navisworks 2023 兼容适配（SetSelectionHidden、无分类 XML 自动发现） | ✅ 已完成 |
 | **第五版** | GUI 重构（3 标签页对话框 + 工具栏 + DataGridView + 条件编辑器） | ✅ 已完成 |
-| **第六版** | 外观优化（Navisworks 风格 UI、DPI 自适应） | 🔧 进行中 |
+| **第六版** | STR 保护节点 BFS 重写 + 诊断日志 + 选择集 + 使用说明 + DPI 自适应 | ✅ 已完成 |
 | **第七版** | 批量处理多个 XML 文件 | ⏳ 计划中 |
 
 ---
