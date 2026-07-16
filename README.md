@@ -1,145 +1,89 @@
 # 傑出品 — Navisworks 查找插件（2023 版）
 
-Navisworks Manage 2023 .NET 插件，用于自动执行由「傑出品」Python 工具生成的 XML 查找操作。
-
----
+Navisworks Manage 2023 .NET 插件，用于读取由上游工具生成的 XML 查找条件，或使用手动条件在当前模型范围内定位对象。
 
 ## 概述
 
-「傑出品」是两件套工具链：
-
-| 组件 | 位置 | 技术栈 | 职责 |
-|------|------|--------|------|
-| **XML 生成器** | `sqt_tool.py` | Python + Tkinter | 输入查询值，生成 Navisworks exchange XML |
-| **查找插件** (本组件) | `navisworks-plugin/` | C# .NET Framework 4.8 | 读取 XML，在 Navisworks 中执行查找并选中 |
-
-**工作流程：**
-
-```
-Python 工具生成 XML  →  用户在 Navisworks 打开模型
-  →  点击插件按钮「傑出品查找」
-  →  选择 .xml 文件
-  →  插件解析 XML 条件 → 原生 Search API 匹配 → 选中匹配对象
-  →  弹窗报告结果（条件数 / 找到数 / 未找到数 / 总匹配对象数）
-  可选： → 仅搜索选中对象（如果选择树中有预选）
-  →  用户确认后 → 隐藏未选中
-  →  输出日志
-```
-
----
+插件使用 Navisworks 原生 Search API 搜索对象。每条条件独立执行，结果按条件展示；所有已找到和重复条件的对象会合并去重，用于查看和排查。隐藏未选中是受严格安全门禁保护的可选操作。
 
 ## 目标环境
 
 | 项目 | 值 |
-|------|-----|
-| Navisworks | **Manage 2023**（安装在 `F:\Navisworks\Navisworks Manage 2023\`） |
-| .NET Framework | **4.8** |
-| 开发工具 | **命令行编译**（MSBuild 17.14 / VS 2022 Build Tools） |
-| 操作系统 | Windows 11（22H2+, 已内置 .NET 4.8.1） |
+|---|---|
+| Navisworks | Manage 2023；默认 `%ProgramFiles%\Autodesk\Navisworks Manage 2023` |
+| 非标准安装 | 设置 `NAVISWORKS_2023_PATH` |
+| .NET Framework | 4.8，x64 |
+| 开发工具 | MSBuild / Visual Studio 2022 Build Tools |
+| 操作系统 | Windows |
 
-> 只适配 Navisworks Manage 2023，不做多版本兼容。
-
----
+项目文件的路径优先级为：显式 MSBuild 属性 `NavisworksInstallDir`、环境变量 `NAVISWORKS_2023_PATH`、标准 Program Files 目录。`build_2023.bat` 使用环境变量或标准目录，并把解析后的目录显式传给 MSBuild。
 
 ## 功能
 
-### 核心流程（两段式安全设计）
+### 搜索条件
 
-**第一步：读取 → 查找 → 选中 → 报告**
-- 点击按钮，选择 XML 文件
-- 解析 XML 中的 `findspec / conditions / condition`
-- 支持 `equals`（精确匹配）和 `contains`（包含匹配）
-- 可选 `<category>` 限定搜索范围；无 `<category>` 时通过模型采样自动发现所属分类
-- 使用 **Navisworks 原生 Search API**（C++ 引擎层执行，100~1000 倍于手动 COM 遍历）
-- 所有匹配到的 `ModelItem` 合并为当前选择
-- 弹窗报告：条件总数、找到数、未找到数、总匹配数
+- 支持 `equals`（精确匹配）和 `contains`（包含匹配）。
+- 条件由可选分类、属性名、比较方式和查询值组成。
+- 缺少分类时，插件在当前模型中采样最多 2000 个对象来发现分类，并缓存本轮结果。
+- 用户必须先从选择树确定搜索范围；插件直接把范围根节点交给原生 Search API，不在 .NET 层展开模型后代。
+- 多个条件互相独立，最终命中对象按并集去重，因此平铺条件语义是 OR，而不是所有条件同时满足的 AND。
 
-**第二步（用户确认后）：隐藏未选中**
-- 用户查看报告后选择是否隐藏未选中
-- 通过 `LcOwDocument.InvertSelection()` + `SetSelectionHidden(ModelItemCollection, true)` 实现
-- 匹配数为 0 时**禁止**执行隐藏未选中
-- 隐藏后恢复已匹配项为选中状态
+### 唯一性校验与结果可视化
 
-### 搜索范围选择（2.0 新增）
-- 如果选择树中有预选对象，弹窗询问是否仅搜索选中项（含子项）
-- 选「是」→ 只搜索选中对象及其子项
-- 选「否」→ 搜索整个模型
+每条查询条件在当前选定模型范围内必须恰好匹配 1 个对象：
 
-### 用户体验
-- 等待光标（匹配过程中显示沙漏）
-- 文件选择对话框强制置顶（不会被 Navisworks 主窗口挡住）
-- 全面的异常处理（文档未打开、XML 格式错误、无匹配等场景均有中文提示）
-- **不卡死** — Search API 内部处理消息泵，Navisworks 保持响应
-- **内置使用说明** — 搜索条件页「使用说明」按钮，分步操作指南 + 常见问题
+- 匹配 0 个：未找到；
+- 匹配 1 个：已找到；
+- 匹配 2 个及以上：重复；
+- 条件无法执行：条件异常。
 
-### 创建选择集（v1.2 新增）
-- 搜索完成后点击「创建选择集」，将匹配对象持久化为 Navisworks 原生 SelectionSet
-- 选择集出现在 Navisworks「集合」面板，右键 →「选择」→ 批量修改属性（颜色、透明度、隐藏等）
-- 选择集随 `.nwf` 文件保存，关闭插件后仍可使用
-- 命名格式：`{模型前缀}_查找结果_{时间戳}`
+结果页可以筛选全部、问题项、已找到、未找到、重复和条件异常。存在任意问题项时，插件严格阻止“隐藏未选中”；处理条件或模型数据并重新搜索，直到全部条件唯一匹配后才允许隐藏。
 
-### 诊断日志（v1.2 新增）
-- 选项页「诊断日志」开关，默认关闭（日常搜索零开销）
-- 开启后每次搜索输出结构化诊断文件，记录：搜索模式、范围节点、模型前缀识别、每个条件的匹配统计、STR 保护节点详情、选中写入结果、隐藏执行结果
-- 日志文件保存在 DLL 同级目录，文件名包含时间戳
+双击“重复”结果会在 Navisworks 中选中该条件命中的全部对象，便于定位模型中的重复值。两条相同的输入条件若各自只匹配同一对象，二者仍都是“已找到”，不构成模型值重复。
 
----
+修改、导入、删除或清空条件会立即使旧结果失效。失效后不能导出旧结果、创建选择集或继续使用旧的隐藏确认，必须重新搜索。
+
+### STR 保护与隐藏
+
+隐藏模式会根据唯一模型前缀定位 `{前缀}-STR` 节点及其后代，并将其与搜索命中对象合并为最终保留集合。只有所有条件均为“已找到”，且范围、模型前缀、最终保留集合、当前选择和用户确认都有效时，才执行隐藏未选中；完成后恢复最终保留集合为当前选择。
+
+### 结果复用与诊断
+
+- **导出结果**：导出当前有效结果为 CSV 或 TXT。
+- **创建选择集**：把当前有效命中对象保存为 Navisworks 原生 SelectionSet。
+- **普通日志**：每次搜索后写入 XML 同级目录。
+- **诊断日志**：选项页显式启用，记录范围、模型前缀、条件、保护、选择和隐藏决策。
 
 ## 项目结构
 
 ```
-navisworks-plugin/
-├── NavisworksPlugin.csproj         # .NET Framework 4.8 x64 项目文件
-├── Properties/
-│   └── AssemblyInfo.cs              # 程序集信息
-├── PluginEntry.cs                   # 插件入口（AddInPlugin）→ 打开 SearchDialog
-├── SearchDialog.cs                  # ★ 主对话框（3 标签页 + 工具栏 + DataGridView + 搜索执行）
-├── XmlSearchParser.cs               # 解析 Navisworks exchange XML → List<SearchCondition>
-├── SearchCondition.cs               # 搜索条件 POCO
-├── SearchResult.cs                  # 搜索结果 POCO
-├── ModelItemMatcher.cs              # 匹配引擎（Navisworks 原生 Search.FindAll API 封装）
-├── SelectionService.cs              # 选中 + 创建 SelectionSet（选择集）
-├── HideServiceFixed.cs              # Hide Unselected（LcOwDocument COM）
-├── ProtectedKeepService.cs          # STR 保护节点查找（BFS 快速路径）
-├── LogService.cs                    # UTF-8 查找日志
-├── DiagnosticLogSession.cs          # 诊断日志会话（结构化记录搜索全流程）
-├── DiagnosticLogExtensions.cs       # 诊断日志扩展方法
-├── manifests/
-│   └── 傑出品NavisworksPlugin.plugin # XML 清单（插件注册 + 自定义选项卡）
-├── scripts/
-│   └── install_2023.ps1             # PowerShell 部署脚本
-├── build_2023.bat                   # MSBuild 编译脚本
-├── install_2023.bat                 # 部署脚本（旧版）
-├── test_search.xml                 # 测试用搜索条件 XML
-├── CLAUDE.md                        # AI 助手指南
-├── AGENTS.md                        # → CLAUDE.md（同源副本）
-├── CHANGELOG.md                     # 更新日志
-└── README.md
+NavisworksPlugin.csproj                 # .NET Framework 4.8 x64 项目文件
+PluginEntry.cs                          # 插件入口
+SearchDialog.cs                         # 主对话框和交互编排
+SearchCondition.cs                      # 搜索条件
+SearchConditionSnapshot.cs              # 条件快照
+SearchConditionValidator.cs             # 条件校验
+SearchResult.cs                         # 条件结果
+SearchResultPolicy.cs                   # 四态唯一性策略
+SearchResultStatus.cs                   # 结果状态
+XmlSearchParser.cs                      # Navisworks exchange XML 解析
+ModelItemMatcher.cs                     # 原生 Search.FindAll API 封装
+SelectionService.cs                     # 当前选择和 SelectionSet
+HideServiceFixed.cs                     # 隐藏未选中
+ProtectedKeepService.cs                 # STR 保护节点查找
+LogService.cs                           # 普通查找日志
+DiagnosticLogSession.cs                 # 诊断日志会话
+DiagnosticLogExtensions.cs              # 诊断日志扩展
+manifests/傑出品NavisworksPlugin.plugin # 插件清单
+build_2023.bat                          # 根目录构建脚本
+install_2023.bat                        # 根目录安装入口
+scripts/install_2023.ps1               # PowerShell 安装脚本
+tests/                                  # 纯逻辑测试
 ```
 
-### 各文件职责
+## XML 格式
 
-| 文件 | 职责 |
-|------|------|
-| `PluginEntry.cs` | 插件入口点。继承 `AddInPlugin`，`[Plugin]` + `[AddInPlugin]` 属性注册。`Execute()` 启动 SearchDialog |
-| `SearchDialog.cs` | **主对话框**。3 个选项卡：搜索条件、选项、结果。工具栏支持导入/导出 XML、添加/删除/清空搜索条件、使用说明。内置条件编辑器（双击 DataGridView 行编辑）。底部按钮：执行搜索、导出结果、创建选择集、关闭。搜索流程：范围校验 → 模型前缀识别 → 匹配 → 选中 → STR 保护 → 用户确认 → 隐藏未选中 → 日志 |
-| `XmlSearchParser.cs` | 用 `XDocument` 解析 Navisworks exchange XML，提取 `<condition>` 列表。支持 category、property、value、test 属性解析 |
-| `ModelItemMatcher.cs` | **核心匹配引擎**。使用 Navisworks 原生 `Search.FindAll()` API（C++ 引擎层执行，自带消息泵）。无 `<category>` 时通过模型采样自动发现属性所属分类。支持全模型和指定范围两种模式 |
-| `SearchCondition.cs` | 条件数据模型：`CategoryInternal`, `CategoryDisplay`, `PropertyInternal`, `PropertyDisplay`, `Test`, `Value` |
-| `SearchResult.cs` | 匹配结果数据模型：`QueryValue`, `MatchCount`, `MatchedItems` |
-| `SelectionService.cs` | 将匹配项合并去重后设为 `doc.CurrentSelection`；`CreateSelectionSet()` 将匹配对象持久化为 Navisworks 原生选择集 |
-| `HideServiceFixed.cs` | 执行 Hide Unselected：`InvertSelection()` → `SetSelectionHidden(collection, true)` → 恢复已匹配为选中。0 匹配保护 |
-| `ProtectedKeepService.cs` | STR 结构节点保护：BFS 从 RootItem 起按 DisplayName 查找 `{prefix}-STR`，命中即停（比全模型遍历快 10000x） |
-| `LogService.cs` | 写 UTF-8 日志到 XML 同级目录，记录每个条件的匹配数和汇总统计；`CreateDiagnosticSession()` 创建诊断日志会话 |
-| `DiagnosticLogSession.cs` | 诊断日志会话对象，结构化记录搜索全流程（模式、范围、匹配、保护、隐藏），输出详细诊断文件 |
-| `DiagnosticLogExtensions.cs` | 诊断日志扩展方法，提供 `LogScopeInfo`、`LogModelPrefixInfo` 等便捷记录接口 |
-| `manifests/傑出品NavisworksPlugin.plugin` | XML 清单，定义自定义选项卡和按钮在 Navisworks 中的布局 |
-
----
-
-## XML 格式支持
-
-### 支架查询（无 category）
+### 无分类条件
 
 ```xml
 <condition test="equals" flags="74">
@@ -150,9 +94,7 @@ navisworks-plugin/
 </condition>
 ```
 
-插件行为：模型采样发现 `LcOaSceneBaseUserName`（显示名"名称"）所属的 category，再用 `HasPropertyByDisplayName(cat, "名称").EqualValue(value)` 精确匹配。
-
-### 坐标查询（有 category）
+### 有分类条件
 
 ```xml
 <condition test="contains" flags="74">
@@ -166,265 +108,129 @@ navisworks-plugin/
 </condition>
 ```
 
-插件行为：在 **SP3D (SmartPlant 3D)** category 内查找 `System Path` 属性，值包含 `P-001`。
-
----
-
-## 数据模型
-
-### SearchCondition
-
-```csharp
-public class SearchCondition
-{
-    public string? CategoryInternal { get; init; }  // category/name internal 属性（可为 null）
-    public string? CategoryDisplay { get; init; }   // category/name 显示文本（可为 null）
-    public string PropertyInternal { get; init; }   // property/name internal 属性
-    public string PropertyDisplay { get; init; }    // property/name 显示文本
-    public string Test { get; init; }               // 匹配方式：equals / contains
-    public string Value { get; init; }              // 查询值
-}
-```
-
-### SearchResult
-
-```csharp
-public class SearchResult
-{
-    public string QueryValue { get; init; }                           // 查询值
-    public int MatchCount { get; init; }                              // 匹配到的 ModelItem 数量
-    public IReadOnlyList<ModelItem> MatchedItems { get; init; }       // 匹配到的 ModelItem 列表
-}
-```
-
----
-
-## 编译
+## 构建
 
 ### 前置要求
 
-1. **Visual Studio 2022 Build Tools**
-   - 安装于 `D:\Apps\Microsoft Visual Studio\2022\BuildTools\`
-   - 需包含 .NET desktop build tools 工作负载
+1. Visual Studio 2022 Build Tools，包含 .NET desktop build tools 和 MSBuild。
+2. Navisworks Manage 2023，API DLL 位于其安装根目录。
+3. NuGet 会自动还原 `Microsoft.NETFramework.ReferenceAssemblies`。
 
-2. **Navisworks Manage 2023**
-   - 安装于 `F:\Navisworks\Navisworks Manage 2023\`
-   - 编译时需要引用其 API DLL
+### 构建命令
 
-3. **NuGet 包**（自动还原）
-   - `Microsoft.NETFramework.ReferenceAssemblies` v1.0.3（无需本地安装 .NET 4.8 Developer Pack）
-
-### 编译命令
+在仓库根目录执行：
 
 ```batch
-navisworks-plugin\build_2023.bat
+build_2023.bat
 ```
 
-或直接调用 MSBuild：
+非标准安装时，先设置安装目录：
 
 ```batch
-MSBuild.exe NavisworksPlugin.csproj /p:Configuration=Release /t:Rebuild /v:m
+set "NAVISWORKS_2023_PATH=<Navisworks Manage 2023 安装目录>"
+build_2023.bat
 ```
 
-编译成功后在 `bin\Release\` 生成 `傑出品NavisworksPlugin.dll`。
+也可直接调用 MSBuild：
 
-### API 引用
+```batch
+MSBuild.exe NavisworksPlugin.csproj /p:Configuration=Release /p:NavisworksInstallDir="<Navisworks Manage 2023 安装目录>" /t:Rebuild /v:m
+```
+
+构建产物为 `bin\Release\傑出品NavisworksPlugin.dll`。API 引用路径为：
 
 | DLL | 路径 |
-|-----|------|
-| `Autodesk.Navisworks.Api.dll` | `F:\Navisworks\Navisworks Manage 2023\Autodesk.Navisworks.Api.dll` |
-| `navisworks.gui.roamer.dll` | `F:\Navisworks\Navisworks Manage 2023\navisworks.gui.roamer.dll` |
-
----
+|---|---|
+| `Autodesk.Navisworks.Api.dll` | `<NavisworksInstallDir>\Autodesk.Navisworks.Api.dll` |
+| `navisworks.gui.roamer.dll` | `<NavisworksInstallDir>\navisworks.gui.roamer.dll` |
 
 ## 安装
 
-### 正确安装路径
-
-Navisworks 2023 要求插件放在 **同名子文件夹** 中：
-
-```
-F:\Navisworks\Navisworks Manage 2023\Plugins\
-└── 傑出品NavisworksPlugin\
-    ├── 傑出品NavisworksPlugin.dll
-    └── 傑出品NavisworksPlugin.plugin
-```
-
-### 一键安装
+关闭 Navisworks 后，在仓库根目录执行：
 
 ```batch
-navisworks-plugin\install_2023.bat
+install_2023.bat
 ```
 
-或使用 PowerShell：
+或直接运行 PowerShell 脚本：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_2023.ps1
 ```
 
-### 手动安装
+默认目标目录为：
 
-```batch
-copy bin\Release\傑出品NavisworksPlugin.dll "F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\"
-copy manifests\傑出品NavisworksPlugin.plugin "F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\"
+```
+<NavisworksInstallDir>\Plugins\傑出品NavisworksPlugin\
+  傑出品NavisworksPlugin.dll
+  傑出品NavisworksPlugin.plugin
 ```
 
-### 注意事项
-
-- **不要** 在 Navisworks 安装根目录放置 `.plugin.dll` 文件（会导致程序集名称不匹配错误 HRESULT:0x80131040）
-- **不要** 使用 `%APPDATA%\Autodesk\Navisworks\Plugins\2023\` 路径（该目录不存在）
-- `install_2023.bat` 包含中文字符，若保存为 UTF-8 编码会导致 cmd.exe 解析失败。如遇安装脚本报错，请手动复制文件（见上方命令）
-
----
+不要将 DLL 直接放进 `Plugins\` 根目录或 Navisworks 安装根目录。安装后重启 Navisworks。
 
 ## 使用
 
-1. 启动 Navisworks Manage 2023
-2. 打开模型（`.nwd` / `.nwf` / `.nwc`）
-3. 在左侧「选择树」中选中要搜索的模型节点（必须，不选会提示）
-4. 在 Add-Ins 工具栏点击 **「傑出品查找」** 按钮
-5. 弹出 **傑出品主对话框**，包含 3 个选项卡：
-   - **搜索条件** — 导入 XML / 手动添加条件 / 编辑 / 删除 / 清空 / 使用说明
-   - **选项** — 搜索模式（仅选中 / 选中后隐藏）、诊断日志开关
-   - **结果** — 搜索完成后显示匹配汇总和详情
-6. 点击 **导入** 选择 `.xml` 文件，或手动 **添加** 条件（双击行编辑）
-7. 点击 **执行搜索**
-8. 结果显示在「结果」选项卡
-   - 模式 A：弹窗显示命中统计
-   - 模式 B：弹窗询问是否隐藏未选中
-9. 搜索完成后底部按钮启用：
-   - **导出结果** — 保存为 CSV 或 TXT
-   - **创建选择集** — 持久化为 Navisworks 原生选择集
-10. 日志自动保存到 XML 同级目录
+1. 启动 Navisworks Manage 2023 并打开模型。
+2. 在选择树中选定一个模型范围。
+3. 在 Add-Ins 工具栏点击“傑出品查找”。
+4. 导入 XML，或添加并编辑手动条件。
+5. 在“选项”中选择仅选中或隐藏模式，并按需启用诊断日志。
+6. 执行搜索，在“结果”中查看状态和匹配数量；优先用“问题项”筛选排查。
+7. 重复结果可双击选中全部重复对象；修正条件或模型数据后重新搜索。
+8. 所有条件唯一匹配时，隐藏模式才会提供隐藏确认。
+9. 有效结果可导出或创建选择集；一旦编辑条件，这些旧结果操作立即禁用。
 
----
+## CSV 与日志
 
-## 日志
-
-每次查找操作后，在 XML 文件同级目录生成日志文件：
+普通日志写在 XML 同级目录，文件名格式为：
 
 ```
 <xml文件名>_查找日志_YYYYMMDD_HHmmss.txt
 ```
 
-格式示例：
+CSV 和普通日志均记录完整条件（分类、属性、比较方式、查询值）、状态、匹配数量和说明。CSV 对逗号、双引号和换行进行标准转义，因此查询值包含这些字符时仍可保持列完整。用户开启诊断日志后，额外记录范围、模型前缀、STR 保护、选择写入和隐藏决策。
+
+示例：
 
 ```
 ===== 傑出品 Navisworks 查找日志 =====
-XML 文件: D:\data\支架.xml
-查找时间: 2026-06-29 15:30:00
-条件数: 5
+条件: SmartPlant 3D / System Path / contains / P-001
+状态: 重复
+匹配数量: 3
+说明: 当前范围内匹配多个对象；隐藏未选中已阻止。
 
---- 查询结果 ---
-[找到] M14-101 → 匹配 3 个对象
-[找到] M14-102 → 匹配 1 个对象
-[未找到] M14-103 → 没有匹配的对象
-[找到] M14-104 → 匹配 2 个对象
-[未找到] M14-105 → 没有匹配的对象
-
---- 汇总 ---
-总条件数: 5
-匹配成功: 3
-未找到: 2
-总计匹配对象数: 6
+条件: SmartPlant 3D / System Path / equals / P-002
+状态: 已找到
+匹配数量: 1
 ```
-
----
 
 ## 安全流程
 
 | 场景 | 行为 |
-|------|------|
-| 无文档打开 | 弹窗提示"请先打开一个 Navisworks 文档"，中止 |
-| XML 文件格式错误 | 弹窗提示"XML 解析失败：{具体错误}"，中止 |
-| XML 中无 `<condition>` | 弹窗提示"XML 中未找到查询条件"，中止 |
-| 所有值均未匹配 | 匹配数为 0 → 弹窗报告 → **禁止隐藏未选中** |
-| 部分匹配 | 正常选中，弹窗报告，询问用户是否隐藏 |
-| 全部匹配 | 正常选中，弹窗报告，询问用户是否隐藏 |
-| 隐藏未选中失败 | 弹窗报错，选中状态保留 |
-| 日志写入失败 | 弹窗警告但不中止操作 |
-
----
-
-## 边界情况与性能
-
-| 场景 | 处理方式 |
-|------|----------|
-| property 匹配 | 优先 display name，回退到 internal 名称 |
-| 无 category 条件 | 模型采样发现分类（扫描前 200 个元素），再用 `HasPropertyByDisplayName` |
-| 有 category 条件 | 直接使用 `HasPropertyByDisplayName(category, property)` |
-| 大模型 | 原生 Search API（C++ 引擎层执行），避免数千万次 COM 跨边界调用 |
-| 多个条件 | 每个条件独立执行一次 `Search.FindAll()`，原生引擎每次仅需毫秒到秒级 |
-| 文件选择对话框被挡住 | 使用 `Process.MainWindowHandle` 作为所有者，强制置顶 |
-| Navisworks 响应性 | Search API 内部 `reportProgress: true` 自动泵消息，不卡 UI |
-
----
+|---|---|
+| 无文档、范围或唯一模型前缀 | 中止搜索并给出原因 |
+| XML 格式错误或无条件 | 中止搜索并给出原因 |
+| 任一条件未找到 | 标记“未找到”，严格阻止隐藏 |
+| 任一条件匹配 2 个及以上对象 | 标记“重复”，严格阻止隐藏 |
+| 任一条件无法执行 | 标记“条件异常”，严格阻止隐藏 |
+| 全部条件唯一匹配 | 标记“已找到”，允许用户确认隐藏 |
+| 搜索后编辑条件 | 旧结果失效，导出、选择集和隐藏相关操作禁用 |
+| 隐藏执行失败 | 报告错误并保留可见选择状态 |
+| 日志写入失败 | 报告警告，不改变已完成的搜索结果 |
 
 ## 常见问题
 
-### Q: 插件按钮没出现在 Navisworks 中？
+### 插件按钮没有出现？
 
-A: 检查 DLL 是否在正确的路径：
-```
-F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\傑出品NavisworksPlugin.dll
-```
-同时检查 `.plugin` 清单文件是否存在。确认后重启 Navisworks。
+确认 DLL 和 `.plugin` 清单位于 `<NavisworksInstallDir>\Plugins\傑出品NavisworksPlugin\`，然后重启 Navisworks。
 
-### Q: 之前装过但没显示，怎么办？
+### 编译找不到 Navisworks API？
 
-A: Navisworks 2023 常用的用户级插件目录不存在。务必使用 `F:\Navisworks\Navisworks Manage 2023\Plugins\` 下的子文件夹结构。**不要将 DLL 直接放在 `Plugins\` 根目录**。
+确认 `<NavisworksInstallDir>\Autodesk.Navisworks.Api.dll` 存在。非标准安装时设置 `NAVISWORKS_2023_PATH`，或向 MSBuild 传入 `NavisworksInstallDir`。
 
-### Q: 为什么不能把 `.plugin.dll` 放到 Navisworks 根目录？
+### 为什么结果是“重复”？
 
-A: 内置插件（如 `Navisworks.Clash.Plugin.dll`）的**程序集名称**包含 `.Plugin` 后缀。我们的程序集名是 `傑出品NavisworksPlugin`（不含 `.plugin`），放在根目录会导致 `HRESULT:0x80131040`（程序集清单不匹配）错误。
-
-### Q: 匹配不到任何对象？
-
-A: 检查以下几点：
-1. **无 category 的 XML** — 插件会自动采样模型发现分类。若采样失败（空模型或属性名不匹配），检查 `property internal` 值是否与模型中一致
-2. **有 category 的 XML** — 确认 `<category>` 和 `<property>` 的 display name 与 Navisworks 属性面板中的显示一致
-3. 可以用 Navisworks 的「选择树」查看目标对象的属性面板，确认属性名和分类名
-
-### Q: 点击按钮后 Navisworks 卡住（未响应）？
-
-A: 旧版本存在此问题（手动 COM 遍历导致 UI 线程阻塞）。当前版本已使用 Navisworks 原生 Search API 替代手动遍历，搜索在 C++ 引擎层执行，内部处理消息泵，**不会导致 Navisworks 卡死**。如果仍遇到卡死，检查是否有文件选择对话框被 Navisworks 主窗口挡住（按 `Alt+Tab` 切换）。
-
-### Q: 编译报错？
-
-A: 确认 `F:\Navisworks\Navisworks Manage 2023\Autodesk.Navisworks.Api.dll` 存在，MSBuild 路径正确。运行 `build_2023.bat` 会自动检查这些条件。
-
----
-
-## 与 Python 工具的兼容性
-
-- 本插件与 `sqt_tool.py` **独立演进**
-- Python 工具负责 XML 生成（**不修改**）
-- 本插件负责 XML 消费
-- 数据格式通过 `<condition>` schema 约定
-
-当前约定的 schema：
-
-| 元素 | 支架 XML | 坐标 XML |
-|------|----------|----------|
-| category | 无 | `internal="SP3D"` / 显示名 "SmartPlant 3D" |
-| property | `internal="LcOaSceneBaseUserName"` / 显示名 "名称" | `internal="System Path"` / 显示名 "System Path" |
-| test | `equals` | `contains` |
-
----
-
-## 路线图
-
-| 阶段 | 内容 | 状态 |
-|------|------|------|
-| **第一版** | 读取 XML → 查找 → 选中 → 弹窗报告 → 用户确认后隐藏 → 日志 | ✅ 已完成 |
-| **第二版** | 搜索范围选择（仅搜索选中对象） | ✅ 已完成 |
-| **第三版** | 性能优化（原生 Search API 替代手动 COM 遍历） | ✅ 已完成 |
-| **第四版** | Navisworks 2023 兼容适配（SetSelectionHidden、无分类 XML 自动发现） | ✅ 已完成 |
-| **第五版** | GUI 重构（3 标签页对话框 + 工具栏 + DataGridView + 条件编辑器） | ✅ 已完成 |
-| **第六版** | STR 保护节点 BFS 重写 + 诊断日志 + 选择集 + 使用说明 + DPI 自适应 | ✅ 已完成 |
-| **第七版** | 批量处理多个 XML 文件 | ⏳ 计划中 |
-
----
+比较方式决定值如何匹配，唯一性校验决定匹配数量是否合法。即使比较方式本身正确，当前范围内命中两个或更多对象仍是“重复”，必须修正条件或模型数据后才能隐藏。
 
 ## 许可
 
