@@ -40,6 +40,7 @@ SearchConditionValidator.cs — 条件有效性校验
 SearchResult.cs            — 结果 POCO
 SearchResultPolicy.cs      — 四态唯一性结果策略
 SearchResultStatus.cs      — 已找到、未找到、重复、条件异常状态
+ResultExportPolicy.cs      — 已勾选、当前筛选、全部结果的导出范围策略
 ModelItemMatcher.cs        — 匹配引擎 (原生 Search.FindAll API)
 SelectionService.cs        — 选中 + 创建 SelectionSet
 SelectionEquivalencePolicy.cs — 最终保留集合与实际选择的纯集合等价策略
@@ -56,6 +57,7 @@ ProtectedKeepService.cs    — STR 保护节点查找 (BFS)
 - **SelectionSet 而非自定义集合** — 复用 Navisworks 原生 SelectionSet API，用户已熟悉其操作方式。模式：`new SelectionSet(collection)` + `doc.SelectionSets.AddCopy()` + `selectionSet.Dispose()`
 - **STR 节点保护** — BFS 从 RootItem 按 DisplayName 查找 `{prefix}-STR`，命中即停（从遍历 60K 节点降为 3-4 次比较）
 - **搜索后选中再隐藏** — 问题结果默认暂停隐藏，用户明确确认后可继续；自动流程和主界面按钮共用 STR、最终集合与实际选择校验，覆盖确认只绕过唯一性要求
+- **导出选择独立于模型选择** — 结果行复选框只记录条件序号；跨筛选保留，结果失效即清空，不修改 Navisworks CurrentSelection
 
 ## 禁止事项
 

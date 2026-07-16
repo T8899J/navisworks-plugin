@@ -35,6 +35,7 @@ namespace JiePinPai.Navisworks
 
         // ── 模块 4：结果（搜索后显示） ──
         private Label _lblResultSummary;
+        private Label _lblExportSelection;
         private FlowLayoutPanel _resultFilterPanel;
         private DataGridView _resultsGrid;
         private SearchResultFilter _activeResultFilter = SearchResultFilter.All;
@@ -43,6 +44,10 @@ namespace JiePinPai.Navisworks
         private Button _btnCreateSelectionSet;
         private Button _btnHideUnselected;
         private Button _btnClose;
+        private ContextMenuStrip _exportResultsMenu;
+        private ToolStripMenuItem _exportCheckedMenuItem;
+        private ToolStripMenuItem _exportFilteredMenuItem;
+        private ToolStripMenuItem _exportAllMenuItem;
 
         // ── 公共操作按钮 ──
         private TabControl _tabControl;
@@ -63,12 +68,15 @@ namespace JiePinPai.Navisworks
         private string _currentModelPrefix;
         private List<ModelItem> _lastScopeRoots = new List<ModelItem>();
         private List<ModelItem> _lastMatchedItemsInScope = new List<ModelItem>();
+        private HashSet<int> _checkedExportResultIndices = new HashSet<int>();
+        private bool _updatingExportChecks;
 
         // ── 列索引常量 ──
         private const int COL_CATEGORY = 0;
         private const int COL_PROPERTY = 1;
         private const int COL_TEST = 2;
         private const int COL_VALUE = 3;
+        private const int RESULT_COL_EXPORT = 0;
         private const int BASE_DPI = 96;
         private static readonly Regex ModelPrefixRegex =
             new Regex(@"^(TS-M[0-9A-Z]+)-", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -157,7 +165,7 @@ namespace JiePinPai.Navisworks
 
             _btnExportResults = new Button
             {
-                Text = "导出结果",
+                Text = "导出结果 ▾",
                 Dock = DockStyle.Fill,
                 FlatStyle = FlatStyle.Flat,
                 FlatAppearance =
@@ -173,6 +181,28 @@ namespace JiePinPai.Navisworks
                 Enabled = false,
             };
             _btnExportResults.Click += BtnExportResults_Click;
+
+            _exportResultsMenu = new ContextMenuStrip
+            {
+                Font = new Font("Microsoft YaHei UI", 9F),
+                ShowImageMargin = false,
+            };
+            _exportCheckedMenuItem = new ToolStripMenuItem();
+            _exportFilteredMenuItem = new ToolStripMenuItem();
+            _exportAllMenuItem = new ToolStripMenuItem();
+            _exportCheckedMenuItem.Click +=
+                (menuSender, menuArgs) => ExportResults(ResultExportScope.Checked);
+            _exportFilteredMenuItem.Click +=
+                (menuSender, menuArgs) => ExportResults(ResultExportScope.CurrentFilter);
+            _exportAllMenuItem.Click +=
+                (menuSender, menuArgs) => ExportResults(ResultExportScope.All);
+            _exportResultsMenu.Items.AddRange(new ToolStripItem[]
+            {
+                _exportCheckedMenuItem,
+                _exportFilteredMenuItem,
+                new ToolStripSeparator(),
+                _exportAllMenuItem,
+            });
 
             _btnCreateSelectionSet = new Button
             {
@@ -625,8 +655,25 @@ namespace JiePinPai.Navisworks
             AddResultFilterButton(SearchResultFilter.Duplicate, "重复");
             AddResultFilterButton(SearchResultFilter.ConditionInvalid, "条件异常");
 
+            _lblExportSelection = new Label
+            {
+                Text = "已勾选 0 条",
+                AutoSize = false,
+                Width = ScaleLogical(108),
+                Height = CalculateButtonHeight(this.Font),
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.FromArgb(71, 85, 105),
+                Margin = new Padding(ScaleLogical(6), 0, 0, 0),
+            };
+            _resultFilterPanel.Controls.Add(_lblExportSelection);
+
             _resultsGrid = CreateResultsGrid();
             _resultsGrid.CellDoubleClick += ResultsGrid_CellDoubleClick;
+            _resultsGrid.CellValueChanged += ResultsGrid_CellValueChanged;
+            _resultsGrid.CurrentCellDirtyStateChanged +=
+                ResultsGrid_CurrentCellDirtyStateChanged;
+            _resultsGrid.ColumnHeaderMouseClick +=
+                ResultsGrid_ColumnHeaderMouseClick;
             SetActiveResultFilter(SearchResultFilter.All);
 
             root.Controls.Add(_lblResultSummary, 0, 0);
@@ -665,9 +712,10 @@ namespace JiePinPai.Navisworks
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
                 AllowUserToResizeRows = false,
-                ReadOnly = true,
+                ReadOnly = false,
                 MultiSelect = false,
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                EditMode = DataGridViewEditMode.EditOnEnter,
                 RowHeadersVisible = false,
                 AutoGenerateColumns = false,
                 BackgroundColor = Color.White,
@@ -682,6 +730,17 @@ namespace JiePinPai.Navisworks
             grid.RowTemplate.Height = CalculateContentHeight(grid.Font, 1, 12);
             ApplyGridHeaderLayout(grid);
 
+            var exportColumn = new DataGridViewCheckBoxColumn
+            {
+                Name = "ExportSelected",
+                HeaderText = "勾选",
+                Width = ScaleLogical(58),
+                ThreeState = false,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                ReadOnly = false,
+            };
+            exportColumn.HeaderCell.ToolTipText = "单击表头可勾选或取消当前筛选下的全部结果";
+            grid.Columns.Add(exportColumn);
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "ConditionIndex",
@@ -732,6 +791,8 @@ namespace JiePinPai.Navisworks
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
                 FillWeight = 48F,
             });
+            for (int columnIndex = 1; columnIndex < grid.Columns.Count; columnIndex++)
+                grid.Columns[columnIndex].ReadOnly = true;
             return grid;
         }
 
@@ -740,6 +801,8 @@ namespace JiePinPai.Navisworks
             DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0 || e.RowIndex >= _resultsGrid.Rows.Count)
+                return;
+            if (e.ColumnIndex == RESULT_COL_EXPORT)
                 return;
 
             var result = _resultsGrid.Rows[e.RowIndex].Tag as SearchResult;
@@ -810,27 +873,146 @@ namespace JiePinPai.Navisworks
 
         private void RefreshResultsGrid(IEnumerable<SearchResult> results)
         {
-            _resultsGrid.Rows.Clear();
-            foreach (SearchResult result in results)
+            _updatingExportChecks = true;
+            try
             {
-                if (!SearchResultPolicy.MatchesFilter(result.Status, _activeResultFilter))
-                    continue;
+                _resultsGrid.Rows.Clear();
+                foreach (SearchResult result in results)
+                {
+                    if (!SearchResultPolicy.MatchesFilter(result.Status, _activeResultFilter))
+                        continue;
 
-                int rowIndex = _resultsGrid.Rows.Add(
-                    result.Condition.DisplayIndex,
-                    SearchResultPolicy.GetDisplayName(result.Status),
-                    result.Condition.GetCategoryName(),
-                    result.Condition.GetPropertyName(),
-                    result.Condition.Test,
-                    result.Condition.Value,
-                    result.MatchCount,
-                    result.StatusMessage);
-                DataGridViewRow row = _resultsGrid.Rows[rowIndex];
-                row.Tag = result;
-                ApplyResultRowStyle(row, result.Status);
-                foreach (DataGridViewCell cell in row.Cells)
-                    cell.ToolTipText = Convert.ToString(cell.Value);
+                    int displayIndex = result.Condition.DisplayIndex;
+                    int rowIndex = _resultsGrid.Rows.Add(
+                        _checkedExportResultIndices.Contains(displayIndex),
+                        displayIndex,
+                        SearchResultPolicy.GetDisplayName(result.Status),
+                        result.Condition.GetCategoryName(),
+                        result.Condition.GetPropertyName(),
+                        result.Condition.Test,
+                        result.Condition.Value,
+                        result.MatchCount,
+                        result.StatusMessage);
+                    DataGridViewRow row = _resultsGrid.Rows[rowIndex];
+                    row.Tag = result;
+                    ApplyResultRowStyle(row, result.Status);
+                    row.Cells[RESULT_COL_EXPORT].ToolTipText =
+                        "勾选后可通过底部“导出结果”导出该条件";
+                    for (int cellIndex = 1; cellIndex < row.Cells.Count; cellIndex++)
+                    {
+                        DataGridViewCell cell = row.Cells[cellIndex];
+                        cell.ToolTipText = Convert.ToString(cell.Value);
+                    }
+                }
             }
+            finally
+            {
+                _updatingExportChecks = false;
+            }
+
+            UpdateExportSelectionState();
+        }
+
+        private void ResultsGrid_CurrentCellDirtyStateChanged(object sender, EventArgs e)
+        {
+            if (_resultsGrid.IsCurrentCellDirty
+                && _resultsGrid.CurrentCell?.ColumnIndex == RESULT_COL_EXPORT)
+            {
+                _resultsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            }
+        }
+
+        private void ResultsGrid_CellValueChanged(
+            object sender,
+            DataGridViewCellEventArgs e)
+        {
+            if (_updatingExportChecks
+                || e.RowIndex < 0
+                || e.ColumnIndex != RESULT_COL_EXPORT)
+            {
+                return;
+            }
+
+            DataGridViewRow row = _resultsGrid.Rows[e.RowIndex];
+            var result = row.Tag as SearchResult;
+            if (result?.Condition == null)
+                return;
+
+            bool selected = Convert.ToBoolean(row.Cells[RESULT_COL_EXPORT].Value);
+            int displayIndex = result.Condition.DisplayIndex;
+            if (selected)
+                _checkedExportResultIndices.Add(displayIndex);
+            else
+                _checkedExportResultIndices.Remove(displayIndex);
+
+            UpdateExportSelectionState();
+        }
+
+        private void ResultsGrid_ColumnHeaderMouseClick(
+            object sender,
+            DataGridViewCellMouseEventArgs e)
+        {
+            if (e.ColumnIndex != RESULT_COL_EXPORT)
+                return;
+
+            List<int> visibleIds = GetCurrentFilteredResults()
+                .Select(result => result.Condition.DisplayIndex)
+                .ToList();
+            bool allVisibleSelected = visibleIds.Count > 0
+                && visibleIds.All(id => _checkedExportResultIndices.Contains(id));
+            _checkedExportResultIndices = ResultExportPolicy.SetVisibleSelection(
+                _checkedExportResultIndices,
+                visibleIds,
+                !allVisibleSelected);
+            RefreshResultsGrid(_lastResults ?? Enumerable.Empty<SearchResult>());
+        }
+
+        private List<SearchResult> GetCurrentFilteredResults()
+        {
+            return (_lastResults ?? new List<SearchResult>())
+                .Where(result => result?.Condition != null)
+                .Where(result => SearchResultPolicy.MatchesFilter(
+                    result.Status,
+                    _activeResultFilter))
+                .ToList();
+        }
+
+        private void UpdateExportSelectionState()
+        {
+            List<int> allIds = (_lastResults ?? new List<SearchResult>())
+                .Where(result => result?.Condition != null)
+                .Select(result => result.Condition.DisplayIndex)
+                .ToList();
+            List<int> visibleIds = GetCurrentFilteredResults()
+                .Select(result => result.Condition.DisplayIndex)
+                .ToList();
+            _checkedExportResultIndices = ResultExportPolicy.ResolveExportIds(
+                ResultExportScope.Checked,
+                allIds,
+                visibleIds,
+                _checkedExportResultIndices);
+
+            if (_lblExportSelection != null)
+                _lblExportSelection.Text = $"已勾选 {_checkedExportResultIndices.Count} 条";
+            if (_exportCheckedMenuItem != null)
+            {
+                _exportCheckedMenuItem.Text =
+                    $"导出已勾选（{_checkedExportResultIndices.Count}）";
+                _exportCheckedMenuItem.Enabled = _checkedExportResultIndices.Count > 0;
+            }
+            if (_exportFilteredMenuItem != null)
+            {
+                _exportFilteredMenuItem.Text =
+                    $"导出当前筛选（{visibleIds.Count}）";
+                _exportFilteredMenuItem.Enabled = visibleIds.Count > 0;
+            }
+            if (_exportAllMenuItem != null)
+            {
+                _exportAllMenuItem.Text = $"导出全部结果（{allIds.Count}）";
+                _exportAllMenuItem.Enabled = allIds.Count > 0;
+            }
+            if (_btnExportResults != null)
+                _btnExportResults.Enabled = allIds.Count > 0;
         }
 
         private static void ApplyResultRowStyle(
@@ -927,6 +1109,7 @@ namespace JiePinPai.Navisworks
             _currentModelPrefix = null;
             _lastScopeRoots.Clear();
             _lastMatchedItemsInScope.Clear();
+            _checkedExportResultIndices.Clear();
             _lblResultSummary.Text = message;
             UpdateResultFilterCaptions(Array.Empty<SearchResult>());
             SetActiveResultFilter(SearchResultFilter.All);
@@ -1319,10 +1502,12 @@ namespace JiePinPai.Navisworks
             H("第六步：查看结果与后续操作");
             T("");
             T("  【结果摘要】显示已找到、未找到、重复、条件异常和总匹配对象数量。");
-            T("  【详细列表】可筛选问题项，并双击定位对应条件或重复对象。");
+            T("  【详细列表】可筛选问题项、勾选要导出的条件，并双击定位对应条件或重复对象。");
+            T("  “勾选”只决定导出哪些条件，不会改变 Navisworks 当前模型选择。");
             T("");
             T("  搜索完成后，底部按钮启用：");
-            T("  · 导出结果 → 将匹配结果保存为 CSV/TXT 文件。");
+            T("  · 导出结果 → 可选择导出已勾选、当前筛选或全部结果，保存为 CSV/TXT 文件。");
+            T("    点击“勾选”表头可勾选或取消当前筛选下的全部结果，切换筛选后已有勾选仍保留。");
             T("  · 创建选择集 → 将匹配对象持久化为 Navisworks「集合」面板中的选择集。");
             T("    右键该选择集 →「选择」后可批量修改颜色、透明度、隐藏等属性。");
             T("    选择集会随 .nwf 文件保存，关闭插件后仍可使用。");
@@ -2146,13 +2331,39 @@ namespace JiePinPai.Navisworks
 
         private void BtnExportResults_Click(object sender, EventArgs e)
         {
-            if (_lastResults == null || _lastResults.Count == 0) return;
+            if (_lastResults == null || _lastResults.Count == 0)
+                return;
+
+            UpdateExportSelectionState();
+            _exportResultsMenu.Show(
+                _btnExportResults,
+                new Point(0, _btnExportResults.Height));
+        }
+
+        private void ExportResults(ResultExportScope scope)
+        {
+            List<SearchResult> exportResults = ResolveExportResults(scope);
+            if (exportResults.Count == 0)
+            {
+                MessageBox.Show(
+                    this,
+                    "当前导出范围内没有结果，请调整勾选或筛选条件。",
+                    "傑出品·导出结果",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            string scopeLabel = GetExportScopeLabel(scope);
 
             using (var dialog = new SaveFileDialog
             {
                 Title = "导出结果",
                 Filter = "CSV 文件 (*.csv)|*.csv|文本文件 (*.txt)|*.txt",
-                FileName = $"傑出品结果_{DateTime.Now:yyyyMMdd_HHmmss}.csv",
+                FileName =
+                    $"傑出品结果_{scopeLabel}_{DateTime.Now:yyyyMMdd_HHmmss}.csv",
+                DefaultExt = "csv",
+                AddExtension = true,
             })
             {
                 if (dialog.ShowDialog(this) == DialogResult.OK)
@@ -2163,7 +2374,7 @@ namespace JiePinPai.Navisworks
                         {
                             writer.WriteLine(
                                 "条件序号,状态,CategoryDisplay,CategoryInternal,PropertyDisplay,PropertyInternal,匹配方式,查询值,匹配数,说明,匹配对象详情");
-                            foreach (SearchResult result in _lastResults)
+                            foreach (SearchResult result in exportResults)
                             {
                                 SearchConditionSnapshot condition = result?.Condition;
                                 string[] columns =
@@ -2183,8 +2394,12 @@ namespace JiePinPai.Navisworks
                                 writer.WriteLine(string.Join(",", columns.Select(EscapeCsv)));
                             }
                         }
-                        MessageBox.Show(this, "导出成功！\n" + dialog.FileName,
-                            "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show(
+                            this,
+                            $"导出成功，共 {exportResults.Count} 条。\n" + dialog.FileName,
+                            "完成",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
                     }
                     catch (Exception ex)
                     {
@@ -2192,6 +2407,38 @@ namespace JiePinPai.Navisworks
                             "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 }
+            }
+        }
+
+        private List<SearchResult> ResolveExportResults(ResultExportScope scope)
+        {
+            List<SearchResult> allResults = (_lastResults ?? new List<SearchResult>())
+                .Where(result => result?.Condition != null)
+                .ToList();
+            List<int> allIds = allResults
+                .Select(result => result.Condition.DisplayIndex)
+                .ToList();
+            List<int> visibleIds = GetCurrentFilteredResults()
+                .Select(result => result.Condition.DisplayIndex)
+                .ToList();
+            HashSet<int> exportIds = ResultExportPolicy.ResolveExportIds(
+                scope,
+                allIds,
+                visibleIds,
+                _checkedExportResultIndices);
+            return allResults
+                .Where(result => exportIds.Contains(result.Condition.DisplayIndex))
+                .ToList();
+        }
+
+        private static string GetExportScopeLabel(ResultExportScope scope)
+        {
+            switch (scope)
+            {
+                case ResultExportScope.Checked: return "已勾选";
+                case ResultExportScope.CurrentFilter: return "当前筛选";
+                case ResultExportScope.All: return "全部";
+                default: throw new ArgumentOutOfRangeException(nameof(scope));
             }
         }
 
