@@ -71,3 +71,55 @@ Result: succeeded, 0 warnings, 0 errors. Output: `bin\Release\傑出品Naviswork
 
 - MSTest reports three `MSTEST0044` warnings because `DataTestMethod` is deprecated in the specified framework version. Tests pass and the brief's test structure was retained.
 - The initial plain `dotnet` command could not find the SDK until the repository-documented PATH was applied; subsequent test and build commands succeeded.
+
+## Follow-up concern resolution
+
+### Focused Release test
+
+Command:
+
+```powershell
+$env:PATH = "C:\Users\BOY\AppData\Local\Microsoft\dotnet;" + $env:PATH
+dotnet test tests\JiePinPai.Navisworks.Tests\JiePinPai.Navisworks.Tests.csproj -c Release --no-restore
+```
+
+Exact result:
+
+```text
+已通过! - 失败:     0，通过:    17，已跳过:     0，总计:    17，持续时间: 252 ms
+```
+
+Exit code: `0`. No warnings were emitted.
+
+### Release plugin build
+
+Command:
+
+```powershell
+$env:PATH = "C:\Users\BOY\AppData\Local\Microsoft\dotnet;" + $env:PATH
+dotnet build NavisworksPlugin.csproj -c Release --no-restore
+```
+
+Exact result:
+
+```text
+已成功生成。
+    0 个警告
+    0 个错误
+```
+
+Exit code: `0`.
+
+### Diff check
+
+Command:
+
+```powershell
+git diff --check
+```
+
+Result: no whitespace errors. The focused diff contains only the three `DataTestMethod` to `TestMethod` replacements, with all `DataRow` cases retained.
+
+### Follow-up commit
+
+`6527ba1 test: remove deprecated MSTest attributes`
