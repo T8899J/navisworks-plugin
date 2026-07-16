@@ -20,7 +20,7 @@ namespace JiePinPai.Navisworks.Tests
             Assert.AreEqual(string.Empty, error);
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow("", "equals", "M14-101", "属性名不能为空。")]
         [DataRow("名称", "equals", "", "查询值不能为空。")]
         [DataRow("名称", "startsWith", "M14", "匹配方式仅支持 equals 或 contains。")]
