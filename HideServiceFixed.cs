@@ -39,10 +39,21 @@ namespace JiePinPai.Navisworks
 
             try
             {
-                object state = doc.State;
+                // Accessing doc.State via PropertyInfo to avoid compile-time binding
+                // (doc.State property does not exist in Navisworks 2021 API)
+                PropertyInfo stateProp = typeof(Document).GetProperty("State");
+                if (stateProp == null)
+                {
+                    diagnosticLog?.LogHideOutcome(success: false, errorOccurred: false);
+                    return false;
+                }
+
+                object state = stateProp.GetValue(doc);
                 if (state == null)
-                    throw new InvalidOperationException(
-                        "Unable to access the Navisworks document state.");
+                {
+                    diagnosticLog?.LogHideOutcome(success: false, errorOccurred: false);
+                    return false;
+                }
 
                 Type stateType = state.GetType();
                 int currentSelectionCount = CountCurrentSelection(doc);
@@ -66,8 +77,22 @@ namespace JiePinPai.Navisworks
                     state,
                     null);
 
-                ModelItemCollection invertedSelection =
-                    doc.CurrentSelection.Value.GetSelectedItems(doc);
+                // GetSelectedItems(Document) may not exist in 2021 — probe via reflection
+                ModelItemCollection invertedSelection;
+                MethodInfo getSelectedMethod = typeof(ModelItemCollection).GetMethod(
+                    "GetSelectedItems", new[] { typeof(Document) });
+                if (getSelectedMethod != null)
+                {
+                    invertedSelection = (ModelItemCollection)getSelectedMethod.Invoke(
+                        doc.CurrentSelection.Value, new object[] { doc });
+                }
+                else
+                {
+                    // Fallback: iterate current selection items
+                    invertedSelection = new ModelItemCollection();
+                    foreach (ModelItem item in doc.CurrentSelection.SelectedItems)
+                        invertedSelection.Add(item);
+                }
 
                 var toHide = new ModelItemCollection();
                 foreach (ModelItem item in invertedSelection)
@@ -100,9 +125,15 @@ namespace JiePinPai.Navisworks
             }
             catch (MissingMethodException)
             {
-                errorOccurred = true;
-                throw new InvalidOperationException(
-                    "Navisworks hide API SetSelectionHidden is unavailable for this version.");
+                // Kernel API method does not exist in this Navisworks version
+                diagnosticLog?.LogHideOutcome(success: false, errorOccurred: false);
+                return false;
+            }
+            catch (MissingMemberException)
+            {
+                // Property or method does not exist in this Navisworks version
+                diagnosticLog?.LogHideOutcome(success: false, errorOccurred: false);
+                return false;
             }
             catch (Exception ex)
             {

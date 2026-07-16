@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 
 // 程序集信息
 [assembly: AssemblyTitle("傑出品 Navisworks 查找插件")]
-[assembly: AssemblyDescription("读取傑出品 XML 并在 Navisworks Manage 2023 中执行查找")]
+[assembly: AssemblyDescription("读取傑出品 XML 并在 Navisworks Manage 中执行查找")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("JiePinPai")]
 [assembly: AssemblyProduct("傑出品NavisworksPlugin")]

@@ -86,7 +86,7 @@ namespace JiePinPai.Navisworks
                         search.Selection.SelectAll();
 
                     search.SearchConditions.Add(navisCond);
-                    ModelItemCollection found = search.FindAll(doc, reportProgress: true);
+                    ModelItemCollection found = search.FindAll(doc, false);
 
                     var matchedItems = found.Cast<ModelItem>().ToList();
                     results.Add(new SearchResult
@@ -224,5 +224,6 @@ namespace JiePinPai.Navisworks
                 MatchedItems = new List<ModelItem>(),
             };
         }
+
     }
 }
