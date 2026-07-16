@@ -76,6 +76,7 @@
     <Compile Include="SearchResultStatus.cs" />
     <Compile Include="SearchResultPolicy.cs" />
     <Compile Include="ResultExportPolicy.cs" />
+    <Compile Include="OneToOneMatchPolicy.cs" />
     <Compile Include="SearchCondition.cs" />
     <Compile Include="SearchConditionSnapshot.cs" />
     <Compile Include="SearchConditionValidator.cs" />

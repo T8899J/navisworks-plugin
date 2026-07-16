@@ -63,8 +63,12 @@ namespace JiePinPai.Navisworks
             int outOfScopeCount)
         {
             session.StartSection("XML 搜索结果");
-            AppendLine(session, $"raw XML match count: {rawResultCount}");
-            AppendLine(session, $"matchedItemsInScope count: {matchedItemsInScopeCount}");
+            int repeatedReferenceCount = Math.Max(
+                0,
+                rawResultCount - matchedItemsInScopeCount);
+            AppendLine(session, $"条件匹配次数（对象去重前）: {rawResultCount}");
+            AppendLine(session, $"唯一匹配对象数（跨条件去重后）: {matchedItemsInScopeCount}");
+            AppendLine(session, $"重复对象引用数: {repeatedReferenceCount}");
             AppendLine(session, $"out-of-scope match count: {outOfScopeCount}");
         }
 

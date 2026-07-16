@@ -828,9 +828,9 @@ namespace JiePinPai.Navisworks
                         result.MatchedItems);
                     MessageBox.Show(
                         this,
-                        $"已在 Navisworks 中选中 {selected.Count} 个重复对象。\n" +
+                        $"已在 Navisworks 中选中该重复结果对应的 {selected.Count} 个对象。\n" +
                         "再次搜索前，请重新确认选择树中的搜索范围。",
-                        "傑出品·重复对象",
+                        "傑出品·重复结果",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                 }
@@ -1546,14 +1546,14 @@ namespace JiePinPai.Navisworks
             T("  【模式 B：查找 + 隐藏未选中】");
             T("  搜索并选中后弹窗确认，确认后隐藏不相关的对象，只保留匹配项和 STR 结构节点。");
             T("  任一条件未找到、重复或条件异常时会暂停隐藏并显示警告，可返回检查或明确选择继续。");
-            T("  选择继续时会保留所有匹配对象；重复条件的全部匹配对象都会保留。");
+            T("  选择继续时会保留实际匹配对象；跨条件重复指向的同一对象只保留一份。");
             T("");
             T("  【诊断日志（默认关闭）】勾选后每次搜索输出详细诊断文件。日常无需开启，排查问题时使用。");
             G();
 
             H("第五步：执行搜索");
             T("确认条件表格不为空、选择树中已选中范围 → 点击底部蓝色「执行搜索」按钮。");
-            T("大模型可能需数秒，插件不会卡死 Navisworks。完成后自动切换到「结果」页。");
+            T("大模型可能需数秒。搜索期间界面会暂时锁定，全部操作完成后自动切换到「结果」页。");
             G();
 
             H("第六步：查看结果与后续操作");
@@ -1694,6 +1694,24 @@ namespace JiePinPai.Navisworks
 
         #region 搜索执行
 
+        private void SetSearchBusy(bool busy)
+        {
+            Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+            UseWaitCursor = busy;
+            _btnSearch.Enabled = !busy;
+            _btnSearch.Text = busy ? "正在搜索..." : "执行搜索";
+            _tabControl.Enabled = !busy;
+            _btnClose.Enabled = !busy;
+        }
+
+        private void ActivateResultsTab()
+        {
+            _tabControl.SelectedTab = _tabResults;
+            _tabResults.PerformLayout();
+            _tabResults.Invalidate(true);
+            _tabControl.Update();
+        }
+
         private void BtnSearch_Click(object sender, EventArgs e)
         {
             if (_conditions.Count == 0)
@@ -1733,8 +1751,7 @@ namespace JiePinPai.Navisworks
 
             try
             {
-                Cursor = Cursors.WaitCursor;
-                _btnSearch.Enabled = false;
+                SetSearchBusy(true);
 
                 scopeRoots = SnapshotCurrentSelection(_doc);
                 if (scopeRoots.Count == 0)
@@ -1813,7 +1830,6 @@ namespace JiePinPai.Navisworks
                 _lastMatchedItemsInScope = new List<ModelItem>(matchedItemsInScope);
                 FinalizeSearchResults(results, totalMatched, false, modelPrefix);
                 resultsFinalized = true;
-                Cursor = Cursors.Default;
 
                 hideExecuted = ExecuteCachedResultAction(
                     isSelectOnlyMode,
@@ -1854,8 +1870,9 @@ namespace JiePinPai.Navisworks
             finally
             {
                 diagnosticLog?.WriteToFile();
-                Cursor = Cursors.Default;
-                _btnSearch.Enabled = true;
+                SetSearchBusy(false);
+                if (resultsFinalized)
+                    ActivateResultsTab();
                 UpdateHideButtonState();
             }
         }
@@ -1958,7 +1975,6 @@ namespace JiePinPai.Navisworks
                 if (!uniquenessOverrideConfirmed)
                 {
                     diagnosticLog?.LogHideBlocked(reason);
-                    _tabControl.SelectedTab = _tabResults;
                     return false;
                 }
 
@@ -2356,7 +2372,6 @@ namespace JiePinPai.Navisworks
             _btnExportResults.Enabled = results.Count > 0;
             _btnCreateSelectionSet.Enabled = totalMatched > 0;
             UpdateHideButtonState();
-            _tabControl.SelectedTab = _tabResults;
         }
 
         /// <summary>

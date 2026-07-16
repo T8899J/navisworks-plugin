@@ -112,7 +112,30 @@ namespace JiePinPai.Navisworks
                 }
             }
 
+            MarkCrossConditionDuplicates(results);
             return results;
+        }
+
+        private static void MarkCrossConditionDuplicates(List<SearchResult> results)
+        {
+            IReadOnlyList<ModelItem>[] matchesByCondition = results
+                .Select(result => (IReadOnlyList<ModelItem>)result.MatchedItems)
+                .ToArray();
+            Dictionary<int, int> repeatedOwners =
+                OneToOneMatchPolicy.FindRepeatedSingleMatches(matchesByCondition);
+
+            foreach (KeyValuePair<int, int> repeatedOwner in repeatedOwners)
+            {
+                SearchResult repeatedResult = results[repeatedOwner.Key];
+                if (repeatedResult.Status != SearchResultStatus.Found)
+                    continue;
+
+                SearchResult firstResult = results[repeatedOwner.Value];
+                repeatedResult.Status = SearchResultStatus.Duplicate;
+                repeatedResult.StatusMessage =
+                    $"与条件 #{firstResult.Condition.DisplayIndex} 命中同一对象，" +
+                    "每个对象只允许由一条条件唯一对应。";
+            }
         }
 
         // =================================================================
