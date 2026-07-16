@@ -52,32 +52,38 @@ namespace JiePinPai.Navisworks
 
                 int foundCount = 0;
                 int notFoundCount = 0;
+                int duplicateCount = 0;
+                int invalidCount = 0;
 
                 sb.AppendLine("--- 查询结果 ---");
                 foreach (SearchResult result in results)
                 {
-                    if (result.MatchCount > 0)
+                    switch (result.Status)
                     {
-                        sb.AppendLine(
-                            $"[找到] {result.QueryValue} → " +
-                            $"匹配 {result.MatchCount} 个对象");
-                        foundCount++;
+                        case SearchResultStatus.Found: foundCount++; break;
+                        case SearchResultStatus.NotFound: notFoundCount++; break;
+                        case SearchResultStatus.Duplicate: duplicateCount++; break;
+                        case SearchResultStatus.ConditionInvalid: invalidCount++; break;
                     }
-                    else
-                    {
-                        sb.AppendLine(
-                            $"[未找到] {result.QueryValue} → " +
-                            $"没有匹配的对象");
-                        notFoundCount++;
-                    }
+
+                    SearchConditionSnapshot condition = result.Condition;
+                    sb.AppendLine(
+                        $"[{SearchResultPolicy.GetDisplayName(result.Status)}] " +
+                        $"#{condition.DisplayIndex} " +
+                        $"{condition.GetCategoryName()} / {condition.GetPropertyName()} / " +
+                        $"{condition.Test} / {condition.Value} → " +
+                        $"匹配 {result.MatchCount} 个对象；{result.StatusMessage}");
                 }
 
                 sb.AppendLine(string.Empty);
                 sb.AppendLine("--- 汇总 ---");
                 sb.AppendLine($"总条件数: {results.Count}");
-                sb.AppendLine($"匹配成功: {foundCount}");
+                sb.AppendLine($"已找到: {foundCount}");
                 sb.AppendLine($"未找到: {notFoundCount}");
+                sb.AppendLine($"重复: {duplicateCount}");
+                sb.AppendLine($"条件异常: {invalidCount}");
                 sb.AppendLine($"总计匹配对象数（去重）: {totalMatchedCount}");
+                sb.AppendLine($"唯一性校验: {(SearchResultPolicy.CanHide(results.Select(r => r.Status)) ? "通过" : "未通过")}");
 
                 if (hideExecuted)
                 {

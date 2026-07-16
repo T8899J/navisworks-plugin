@@ -1586,6 +1586,7 @@ namespace JiePinPai.Navisworks
                         "傑出品·唯一性校验未通过",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
+                    WriteLegacyResultLog(results, totalMatched, false);
                     return;
                 }
 
@@ -1732,6 +1733,7 @@ namespace JiePinPai.Navisworks
                 _lastHideExecuted = hideExecuted;
                 _btnExportResults.Enabled = true;
                 _btnCreateSelectionSet.Enabled = totalMatched > 0;
+                WriteLegacyResultLog(results, totalMatched, hideExecuted);
                 _tabControl.SelectedTab = _tabResults;
             }
             catch (Exception ex)
@@ -1751,6 +1753,21 @@ namespace JiePinPai.Navisworks
                 Cursor = Cursors.Default;
                 _btnSearch.Enabled = true;
             }
+        }
+
+        private void WriteLegacyResultLog(
+            List<SearchResult> results,
+            int totalMatched,
+            bool hideExecuted)
+        {
+            if (string.IsNullOrWhiteSpace(_currentXmlPath))
+                return;
+
+            LogService.WriteLog(
+                _currentXmlPath,
+                results,
+                totalMatched,
+                hideExecuted);
         }
 
         /// <summary>
@@ -1798,14 +1815,24 @@ namespace JiePinPai.Navisworks
                     {
                         using (var writer = new StreamWriter(dialog.FileName, false, System.Text.Encoding.UTF8))
                         {
-                            writer.WriteLine("查询值,匹配数,匹配详情");
-                            foreach (var r in _lastResults)
+                            writer.WriteLine(
+                                "条件序号,状态,分类,属性名,匹配方式,查询值,匹配数,说明,匹配对象详情");
+                            foreach (SearchResult result in _lastResults)
                             {
-                                string details = r.MatchCount > 0
-                                    ? string.Join("; ", r.MatchedItems.Select(
-                                        i => i.DisplayName ?? i.InstanceGuid.ToString()))
-                                    : "";
-                                writer.WriteLine($"\"{r.QueryValue}\",{r.MatchCount},\"{details}\"");
+                                SearchConditionSnapshot condition = result.Condition;
+                                string[] columns =
+                                {
+                                    condition.DisplayIndex.ToString(),
+                                    SearchResultPolicy.GetDisplayName(result.Status),
+                                    condition.GetCategoryName(),
+                                    condition.GetPropertyName(),
+                                    condition.Test,
+                                    condition.Value,
+                                    result.MatchCount.ToString(),
+                                    result.StatusMessage,
+                                    FormatMatchedItems(result.MatchedItems),
+                                };
+                                writer.WriteLine(string.Join(",", columns.Select(EscapeCsv)));
                             }
                         }
                         MessageBox.Show(this, "导出成功！\n" + dialog.FileName,
@@ -1818,6 +1845,20 @@ namespace JiePinPai.Navisworks
                     }
                 }
             }
+        }
+
+        private static string EscapeCsv(string value)
+        {
+            string safe = value ?? string.Empty;
+            return "\"" + safe.Replace("\"", "\"\"") + "\"";
+        }
+
+        private static string FormatMatchedItems(IEnumerable<ModelItem> items)
+        {
+            return string.Join(
+                "; ",
+                (items ?? Enumerable.Empty<ModelItem>()).Select(item =>
+                    $"{item.DisplayName ?? "（无名称）"} [{item.InstanceGuid}]"));
         }
 
         private void BtnCreateSelectionSet_Click(object sender, EventArgs e)
