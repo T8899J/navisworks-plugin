@@ -68,6 +68,38 @@ namespace JiePinPai.Navisworks
             AppendLine(session, $"out-of-scope match count: {outOfScopeCount}");
         }
 
+        public static void LogSearchResults(
+            this DiagnosticLogSession session,
+            IEnumerable<SearchResult> results,
+            bool hideGatePassed)
+        {
+            if (session == null)
+                return;
+
+            List<SearchResult> list = (results ?? Enumerable.Empty<SearchResult>()).ToList();
+            session.StartSection("查询条件结果");
+            foreach (SearchResult result in list)
+            {
+                SearchConditionSnapshot condition = result.Condition;
+                AppendLine(
+                    session,
+                    $"#{condition.DisplayIndex} " +
+                    $"状态={SearchResultPolicy.GetDisplayName(result.Status)}, " +
+                    $"分类={Safe(condition.GetCategoryName())}, " +
+                    $"属性={Safe(condition.GetPropertyName())}, " +
+                    $"方式={Safe(condition.Test)}, " +
+                    $"查询值={Safe(condition.Value)}, " +
+                    $"匹配数={result.MatchCount}, " +
+                    $"说明={Safe(result.StatusMessage)}");
+            }
+
+            AppendLine(session, $"已找到: {list.Count(r => r.Status == SearchResultStatus.Found)}");
+            AppendLine(session, $"未找到: {list.Count(r => r.Status == SearchResultStatus.NotFound)}");
+            AppendLine(session, $"重复: {list.Count(r => r.Status == SearchResultStatus.Duplicate)}");
+            AppendLine(session, $"条件异常: {list.Count(r => r.Status == SearchResultStatus.ConditionInvalid)}");
+            AppendLine(session, $"隐藏门禁通过: {(hideGatePassed ? "是" : "否")}");
+        }
+
         public static void LogProtectedNodeStats(
             this DiagnosticLogSession session,
             string targetNodeName,

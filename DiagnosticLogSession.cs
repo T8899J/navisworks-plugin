@@ -93,6 +93,11 @@ namespace JiePinPai.Navisworks
             _sb.AppendLine("禁止隐藏：匹配数量或当前选择数量为 0。");
         }
 
+        public void LogHideBlocked(string reason)
+        {
+            _sb.AppendLine($"禁止隐藏：{Safe(reason)}");
+        }
+
         public void LogHideOutcome(bool success, bool errorOccurred)
         {
             _sb.AppendLine($"执行隐藏后是否报错: {(errorOccurred ? "是" : "否")}");

@@ -1517,13 +1517,61 @@ namespace JiePinPai.Navisworks
                 results = ModelItemMatcher.MatchAll(
                     _doc, scopeRoots, _conditions);
 
-                diagnosticLog?.LogXmlScopeResultStats(
-                    results.Count, 0, 0);
-
                 List<ModelItem> matchedItemsInScope =
                     MergeUniqueItems(results.SelectMany(r => r.MatchedItems));
                 totalMatched = matchedItemsInScope.Count;
+                bool resultGatePassed = SearchResultPolicy.CanHide(
+                    results.Select(r => r.Status));
+
+                _lastResults = results;
+                _lastTotalMatched = totalMatched;
+                _lastHideExecuted = false;
                 ShowResults(results, totalMatched, modelPrefix);
+                diagnosticLog?.LogXmlScopeResultStats(
+                    results.Sum(r => r.MatchCount),
+                    matchedItemsInScope.Count,
+                    0);
+                diagnosticLog?.LogSearchResults(results, resultGatePassed);
+
+                if (!isSelectOnlyMode && !resultGatePassed)
+                {
+                    int notFoundCount = results.Count(
+                        r => r.Status == SearchResultStatus.NotFound);
+                    int duplicateCount = results.Count(
+                        r => r.Status == SearchResultStatus.Duplicate);
+                    int invalidCount = results.Count(
+                        r => r.Status == SearchResultStatus.ConditionInvalid);
+                    string reason =
+                        $"结果未通过唯一性校验：未找到 {notFoundCount} 条，" +
+                        $"重复 {duplicateCount} 条，条件异常 {invalidCount} 条。";
+
+                    if (matchedItemsInScope.Count > 0)
+                    {
+                        List<ModelItem> problemSelection = SelectionService.SetSelection(
+                            _doc,
+                            matchedItemsInScope,
+                            diagnosticLog);
+                        diagnosticLog?.LogDecision(
+                            $"问题结果定位选择数量: {problemSelection.Count}");
+                    }
+
+                    diagnosticLog?.LogDecision(reason);
+                    diagnosticLog?.LogHideBlocked(reason);
+                    MessageBox.Show(
+                        this,
+                        reason +
+                        "\n\n已阻止隐藏未选中。结果页保留全部问题项；" +
+                        "修改条件或模型数据后请重新搜索。" +
+                        "\n再次搜索前，请在选择树中重新选择目标模型范围。",
+                        "傑出品·唯一性校验未通过",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    _lastHideExecuted = false;
+                    _btnExportResults.Enabled = true;
+                    _btnCreateSelectionSet.Enabled = totalMatched > 0;
+                    _tabControl.SelectedTab = _tabResults;
+                    return;
+                }
 
                 ProtectedKeepResult protectedKeepResult;
                 ModelItem protectedNode = scopeRoots.Find(
@@ -1586,6 +1634,7 @@ namespace JiePinPai.Navisworks
                         diagnosticLog);
                     int actualSelectionCount = actualSelectionItems.Count;
                     bool willHide = !isSelectOnlyMode
+                        && resultGatePassed
                         && totalMatched > 0
                         && finalKeepItems.Count > 0
                         && actualSelectionCount > 0;
@@ -1666,7 +1715,7 @@ namespace JiePinPai.Navisworks
                 _lastTotalMatched = totalMatched;
                 _lastHideExecuted = hideExecuted;
                 _btnExportResults.Enabled = true;
-                _btnCreateSelectionSet.Enabled = true;
+                _btnCreateSelectionSet.Enabled = totalMatched > 0;
                 _tabControl.SelectedTab = _tabResults;
             }
             catch (Exception ex)
