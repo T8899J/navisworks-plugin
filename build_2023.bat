@@ -1,5 +1,5 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal DisableDelayedExpansion
 title JiePinPai Navisworks Plugin Builder (2023)
 
 echo ============================================
@@ -9,8 +9,14 @@ echo ============================================
 echo.
 
 REM -- Step 1: Resolve Navisworks 2023 path --
-if defined NAVISWORKS_2023_PATH (
+if not "%~1"=="" (
+    set "NW_PATH=%~1"
+) else if defined NavisworksInstallDir (
+    set "NW_PATH=%NavisworksInstallDir%"
+) else if defined NAVISWORKS_2023_PATH (
     set "NW_PATH=%NAVISWORKS_2023_PATH%"
+) else if defined ProgramW6432 (
+    set "NW_PATH=%ProgramW6432%\Autodesk\Navisworks Manage 2023"
 ) else (
     set "NW_PATH=%ProgramFiles%\Autodesk\Navisworks Manage 2023"
 )
@@ -51,14 +57,14 @@ if not defined MSBUILD (
     echo         Please install VS 2022 Build Tools.
     goto :ERROR
 )
-echo [OK] MSBuild: !MSBUILD!
+echo [OK] MSBuild: %MSBUILD%
 
 REM -- Step 4: Restore NuGet packages --
 echo.
 echo [RESTORE] Restoring NuGet packages ...
 
 cd /d "%~dp0"
-"!MSBUILD!" NavisworksPlugin.csproj /t:Restore /p:Configuration=Release /p:NavisworksInstallDir="!NW_PATH!" /v:m
+"%MSBUILD%" NavisworksPlugin.csproj /t:Restore /p:Configuration=Release /p:NavisworksInstallDir="%NW_PATH%" /v:m
 
 if errorlevel 1 (
     echo.
@@ -69,7 +75,7 @@ REM -- Step 5: Build --
 echo.
 echo [BUILD] Compiling ...
 
-"!MSBUILD!" NavisworksPlugin.csproj /p:Configuration=Release /p:NavisworksInstallDir="!NW_PATH!" /t:Rebuild /v:m
+"%MSBUILD%" NavisworksPlugin.csproj /p:Configuration=Release /p:NavisworksInstallDir="%NW_PATH%" /t:Rebuild /v:m
 
 if errorlevel 1 (
     echo.

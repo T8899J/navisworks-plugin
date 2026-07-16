@@ -17,7 +17,7 @@ $dll = Get-ChildItem -LiteralPath $releaseDir -Filter "*.dll" |
 
 if (-not $dll) {
     Write-Host "[ERROR] Build output not found under: $releaseDir"
-    Write-Host "        Run scripts\build_2023.bat first."
+    Write-Host "        Run build_2023.bat from the repository root first."
     exit 1
 }
 Write-Host "[OK] Found plugin DLL: $($dll.FullName)"
@@ -33,7 +33,11 @@ Write-Host "[OK] Found plugin manifest: $($manifest.FullName)"
 
 $installRoot = $env:NAVISWORKS_2023_PATH
 if ([string]::IsNullOrWhiteSpace($installRoot)) {
-    $installRoot = Join-Path $env:ProgramFiles "Autodesk\Navisworks Manage 2023"
+    $installRoot = $env:ProgramW6432
+    if ([string]::IsNullOrWhiteSpace($installRoot)) {
+        $installRoot = $env:ProgramFiles
+    }
+    $installRoot = Join-Path $installRoot "Autodesk\Navisworks Manage 2023"
 }
 
 $baseDir = Join-Path $installRoot "Plugins"

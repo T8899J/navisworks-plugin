@@ -18,6 +18,7 @@
 
   <PropertyGroup>
     <NavisworksInstallDir Condition="'$(NavisworksInstallDir)' == '' and '$(NAVISWORKS_2023_PATH)' != ''">$(NAVISWORKS_2023_PATH)</NavisworksInstallDir>
+    <NavisworksInstallDir Condition="'$(NavisworksInstallDir)' == '' and '$(ProgramW6432)' != ''">$(ProgramW6432)\Autodesk\Navisworks Manage 2023</NavisworksInstallDir>
     <NavisworksInstallDir Condition="'$(NavisworksInstallDir)' == ''">$(ProgramFiles)\Autodesk\Navisworks Manage 2023</NavisworksInstallDir>
   </PropertyGroup>
 
