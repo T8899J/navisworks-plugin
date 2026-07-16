@@ -1545,31 +1545,47 @@ namespace JiePinPai.Navisworks
                         $"结果未通过唯一性校验：未找到 {notFoundCount} 条，" +
                         $"重复 {duplicateCount} 条，条件异常 {invalidCount} 条。";
 
-                    if (matchedItemsInScope.Count > 0)
-                    {
-                        List<ModelItem> problemSelection = SelectionService.SetSelection(
-                            _doc,
-                            matchedItemsInScope,
-                            diagnosticLog);
-                        diagnosticLog?.LogDecision(
-                            $"问题结果定位选择数量: {problemSelection.Count}");
-                    }
-
                     diagnosticLog?.LogDecision(reason);
                     diagnosticLog?.LogHideBlocked(reason);
+                    _lastHideExecuted = false;
+                    _btnExportResults.Enabled = true;
+                    _btnCreateSelectionSet.Enabled = totalMatched > 0;
+                    _tabControl.SelectedTab = _tabResults;
+
+                    string inspectionSelectionNote = string.Empty;
+                    if (matchedItemsInScope.Count > 0)
+                    {
+                        try
+                        {
+                            SelectionService.SetSelection(
+                                _doc,
+                                matchedItemsInScope,
+                                diagnosticLog);
+                            int actualProblemSelectionCount =
+                                SnapshotCurrentSelection(_doc).Count;
+                            diagnosticLog?.LogDecision(
+                                $"问题结果定位实际选择数量: {actualProblemSelectionCount}");
+                        }
+                        catch (Exception selectionEx)
+                        {
+                            diagnosticLog?.LogException(
+                                "唯一性门禁失败后的问题结果自动定位选择",
+                                selectionEx);
+                            inspectionSelectionNote =
+                                "\n\n自动定位问题对象失败，请在结果页手动检查匹配对象。";
+                        }
+                    }
+
                     MessageBox.Show(
                         this,
                         reason +
                         "\n\n已阻止隐藏未选中。结果页保留全部问题项；" +
                         "修改条件或模型数据后请重新搜索。" +
-                        "\n再次搜索前，请在选择树中重新选择目标模型范围。",
+                        "\n再次搜索前，请在选择树中重新选择目标模型范围。" +
+                        inspectionSelectionNote,
                         "傑出品·唯一性校验未通过",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
-                    _lastHideExecuted = false;
-                    _btnExportResults.Enabled = true;
-                    _btnCreateSelectionSet.Enabled = totalMatched > 0;
-                    _tabControl.SelectedTab = _tabResults;
                     return;
                 }
 
