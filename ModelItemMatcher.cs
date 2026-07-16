@@ -74,7 +74,7 @@ namespace JiePinPai.Navisworks
                 var navisCond = BuildNavisCondition(cond, categoryCache);
                 if (navisCond == null)
                 {
-                    results.Add(MakeEmptyResult(cond.Value));
+                    results.Add(MakeEmptyResult(results.Count, cond));
                     continue;
                 }
 
@@ -91,7 +91,7 @@ namespace JiePinPai.Navisworks
                     var matchedItems = found.Cast<ModelItem>().ToList();
                     results.Add(new SearchResult
                     {
-                        QueryValue = cond.Value,
+                        Condition = SearchConditionSnapshot.From(results.Count, cond),
                         MatchCount = matchedItems.Count,
                         MatchedItems = matchedItems,
                     });
@@ -215,11 +215,15 @@ namespace JiePinPai.Navisworks
         /// <summary>
         /// 生成一个空匹配结果。
         /// </summary>
-        private static SearchResult MakeEmptyResult(string queryValue)
+        private static SearchResult MakeEmptyResult(
+            int conditionIndex,
+            SearchCondition condition)
         {
             return new SearchResult
             {
-                QueryValue = queryValue,
+                Condition = SearchConditionSnapshot.From(conditionIndex, condition),
+                Status = SearchResultStatus.ConditionInvalid,
+                StatusMessage = "条件无法构造。",
                 MatchCount = 0,
                 MatchedItems = new List<ModelItem>(),
             };

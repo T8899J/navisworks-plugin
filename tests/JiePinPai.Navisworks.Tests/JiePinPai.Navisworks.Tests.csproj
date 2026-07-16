@@ -14,5 +14,7 @@
   <ItemGroup>
     <Compile Include="..\..\SearchResultStatus.cs" Link="Production\SearchResultStatus.cs" />
     <Compile Include="..\..\SearchResultPolicy.cs" Link="Production\SearchResultPolicy.cs" />
+    <Compile Include="..\..\SearchCondition.cs" Link="Production\SearchCondition.cs" />
+    <Compile Include="..\..\SearchConditionSnapshot.cs" Link="Production\SearchConditionSnapshot.cs" />
   </ItemGroup>
 </Project>

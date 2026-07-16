@@ -3,33 +3,21 @@ using Autodesk.Navisworks.Api;
 
 namespace JiePinPai.Navisworks
 {
-    /// <summary>
-    /// 单个查询值的匹配结果。
-    /// </summary>
     public class SearchResult
     {
-        /// <summary>
-        /// 原始查询值。
-        /// </summary>
-        public string QueryValue { get; set; }
-
-        /// <summary>
-        /// 匹配到的 ModelItem 数量。
-        /// </summary>
+        public SearchConditionSnapshot Condition { get; set; }
+        public SearchResultStatus Status { get; set; }
+        public string StatusMessage { get; set; }
         public int MatchCount { get; set; }
-
-        /// <summary>
-        /// 匹配到的 ModelItem 列表（MatchCount 为 0 时为空列表）。
-        /// </summary>
         public List<ModelItem> MatchedItems { get; set; }
 
-        /// <summary>
-        /// 默认构造函数。
-        /// </summary>
+        public string QueryValue => Condition?.Value ?? string.Empty;
+        public bool IsProblem => Status != SearchResultStatus.Found;
+
         public SearchResult()
         {
-            QueryValue = string.Empty;
-            MatchCount = 0;
+            Status = SearchResultStatus.ConditionInvalid;
+            StatusMessage = string.Empty;
             MatchedItems = new List<ModelItem>();
         }
     }
