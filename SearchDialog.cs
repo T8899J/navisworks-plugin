@@ -821,6 +821,10 @@ namespace JiePinPai.Navisworks
 
             if (result.Status == SearchResultStatus.Duplicate)
             {
+                List<ModelItem> selectionBeforeInspection =
+                    SnapshotCurrentSelection(_doc);
+                Exception inspectionError = null;
+                Exception restorationError = null;
                 try
                 {
                     List<ModelItem> selected = SelectionService.SetSelection(
@@ -828,17 +832,41 @@ namespace JiePinPai.Navisworks
                         result.MatchedItems);
                     MessageBox.Show(
                         this,
-                        $"已在 Navisworks 中选中该重复结果对应的 {selected.Count} 个对象。\n" +
-                        "再次搜索前，请重新确认选择树中的搜索范围。",
-                        "傑出品·重复结果",
+                        $"已临时选中该重复结果对应的 {selected.Count} 个对象。\n\n" +
+                        $"关闭此提示后，将恢复定位前的 {selectionBeforeInspection.Count} 个对象。\n" +
+                        "之后可直接使用“隐藏未选中”，无需重新导入或重新搜索。",
+                        "傑出品·临时查看重复结果",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
                 }
                 catch (Exception ex)
                 {
+                    inspectionError = ex;
+                }
+                finally
+                {
+                    try
+                    {
+                        RestoreSelection(_doc, selectionBeforeInspection);
+                    }
+                    catch (Exception ex)
+                    {
+                        restorationError = ex;
+                    }
+                }
+
+                if (inspectionError != null || restorationError != null)
+                {
+                    string details = inspectionError?.Message ?? string.Empty;
+                    if (restorationError != null)
+                    {
+                        if (!string.IsNullOrEmpty(details))
+                            details += "\n\n";
+                        details += "恢复原选择失败：" + restorationError.Message;
+                    }
                     MessageBox.Show(
                         this,
-                        "无法选中重复对象：\n" + ex.Message,
+                        "临时查看重复结果未完整完成：\n" + details,
                         "傑出品·定位失败",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error);
@@ -1559,7 +1587,7 @@ namespace JiePinPai.Navisworks
             H("第六步：查看结果与后续操作");
             T("");
             T("  【结果摘要】显示已找到、未找到、重复、条件异常和总匹配对象数量。");
-            T("  【详细列表】可筛选问题项、勾选要导出的条件，并双击定位对应条件或重复对象。");
+            T("  【详细列表】可筛选问题项、勾选导出条件；双击重复结果会临时定位，关闭提示后恢复原选择。");
             T("  “勾选”只决定导出哪些条件，不会改变 Navisworks 当前模型选择。");
             T("");
             T("  搜索完成后，底部按钮启用：");
