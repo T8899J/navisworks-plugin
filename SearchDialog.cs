@@ -355,7 +355,12 @@ namespace JiePinPai.Navisworks
             _btnExportXml = MakeToolButton("导出", BtnExportXml_Click);
             _btnAddCondition = MakeToolButton("添加", BtnAddCondition_Click);
             _btnDeleteCondition = MakeToolButton("删除", BtnDeleteCondition_Click);
-            _btnClearConditions = MakeToolButton("清空", (s, e) => { _conditions.Clear(); RefreshConditionsGrid(); });
+            _btnClearConditions = MakeToolButton("清空", (s, e) =>
+            {
+                _conditions.Clear();
+                RefreshConditionsGrid();
+                InvalidateSearchResults("条件已清空，请添加条件后重新执行搜索。");
+            });
             _btnUsageGuide = MakeToolButton("使用说明", BtnUsageGuide_Click);
 
             toolStrip.Controls.Add(_btnImportXml, 0, 0);
@@ -397,6 +402,7 @@ namespace JiePinPai.Navisworks
             grid.AllowUserToAddRows = false;
             grid.AllowUserToDeleteRows = false;
             grid.AllowUserToResizeRows = false;
+            grid.ReadOnly = true;
             grid.RowHeadersVisible = false;
             grid.MultiSelect = false;
             grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
@@ -595,6 +601,7 @@ namespace JiePinPai.Navisworks
             AddResultFilterButton(SearchResultFilter.ConditionInvalid, "条件异常");
 
             _resultsGrid = CreateResultsGrid();
+            _resultsGrid.CellDoubleClick += ResultsGrid_CellDoubleClick;
             SetActiveResultFilter(SearchResultFilter.All);
 
             root.Controls.Add(_lblResultSummary, 0, 0);
@@ -701,6 +708,56 @@ namespace JiePinPai.Navisworks
                 FillWeight = 48F,
             });
             return grid;
+        }
+
+        private void ResultsGrid_CellDoubleClick(
+            object sender,
+            DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.RowIndex >= _resultsGrid.Rows.Count)
+                return;
+
+            var result = _resultsGrid.Rows[e.RowIndex].Tag as SearchResult;
+            if (result == null)
+                return;
+
+            if (result.Status == SearchResultStatus.Duplicate)
+            {
+                try
+                {
+                    List<ModelItem> selected = SelectionService.SetSelection(
+                        _doc,
+                        result.MatchedItems);
+                    MessageBox.Show(
+                        this,
+                        $"已在 Navisworks 中选中 {selected.Count} 个重复对象。\n" +
+                        "再次搜索前，请重新确认选择树中的搜索范围。",
+                        "傑出品·重复对象",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(
+                        this,
+                        "无法选中重复对象：\n" + ex.Message,
+                        "傑出品·定位失败",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
+                }
+                return;
+            }
+
+            int conditionIndex = result.Condition.ConditionIndex;
+            if (conditionIndex < 0 || conditionIndex >= _conditionsGrid.Rows.Count)
+                return;
+
+            _tabControl.SelectedTab = _tabConditions;
+            _conditionsGrid.ClearSelection();
+            DataGridViewRow conditionRow = _conditionsGrid.Rows[conditionIndex];
+            conditionRow.Selected = true;
+            _conditionsGrid.CurrentCell = conditionRow.Cells[COL_VALUE];
+            _conditionsGrid.FirstDisplayedScrollingRowIndex = conditionIndex;
         }
 
         private void ResultFilterButton_Click(object sender, EventArgs e)
@@ -832,6 +889,20 @@ namespace JiePinPai.Navisworks
             _currentXmlPath = xmlPath;
             _conditions = XmlSearchParser.Parse(xmlPath);
             RefreshConditionsGrid();
+            InvalidateSearchResults("已导入新的搜索条件，请执行搜索。");
+        }
+
+        private void InvalidateSearchResults(string message)
+        {
+            _lastResults = null;
+            _lastTotalMatched = 0;
+            _lastHideExecuted = false;
+            _currentModelPrefix = null;
+            _lblResultSummary.Text = message;
+            UpdateResultFilterCaptions(Array.Empty<SearchResult>());
+            SetActiveResultFilter(SearchResultFilter.All);
+            _btnExportResults.Enabled = false;
+            _btnCreateSelectionSet.Enabled = false;
         }
 
         #endregion
@@ -1031,6 +1102,7 @@ namespace JiePinPai.Navisworks
                     Value = val,
                 };
                 RefreshConditionsGrid();
+                InvalidateSearchResults("条件已修改，请重新执行搜索。");
             }
         }
 
@@ -1325,6 +1397,7 @@ namespace JiePinPai.Navisworks
                     Value = val,
                 });
                 RefreshConditionsGrid();
+                InvalidateSearchResults("已添加搜索条件，请重新执行搜索。");
             }
         }
 
@@ -1337,6 +1410,7 @@ namespace JiePinPai.Navisworks
                 {
                     _conditions.RemoveAt(idx);
                     RefreshConditionsGrid();
+                    InvalidateSearchResults("已删除搜索条件，请重新执行搜索。");
                 }
             }
         }
