@@ -64,7 +64,14 @@ echo.
 echo [RESTORE] Restoring NuGet packages ...
 
 cd /d "%~dp0"
-"%MSBUILD%" NavisworksPlugin.csproj /t:Restore /p:Configuration=Release /p:NavisworksInstallDir="%NW_PATH%" /v:m
+
+if defined NUGET_PACKAGES (
+    set "NUGET_PACKAGES_PATH=%NUGET_PACKAGES%"
+) else (
+    set "NUGET_PACKAGES_PATH=%USERPROFILE%\.nuget\packages"
+)
+
+"%MSBUILD%" NavisworksPlugin.csproj /t:Restore /p:Configuration=Release /p:NavisworksInstallDir="%NW_PATH%" /p:RestorePackagesPath="%NUGET_PACKAGES_PATH%" /p:RestoreIgnoreFailedSources=true /p:NuGetAudit=false /v:m
 
 if errorlevel 1 (
     echo.
@@ -75,7 +82,7 @@ REM -- Step 5: Build --
 echo.
 echo [BUILD] Compiling ...
 
-"%MSBUILD%" NavisworksPlugin.csproj /p:Configuration=Release /p:NavisworksInstallDir="%NW_PATH%" /t:Rebuild /v:m
+"%MSBUILD%" NavisworksPlugin.csproj /p:Configuration=Release /p:NavisworksInstallDir="%NW_PATH%" /p:RestorePackagesPath="%NUGET_PACKAGES_PATH%" /t:Rebuild /v:m
 
 if errorlevel 1 (
     echo.
