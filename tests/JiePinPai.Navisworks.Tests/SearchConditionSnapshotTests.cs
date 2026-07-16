@@ -20,11 +20,17 @@ namespace JiePinPai.Navisworks.Tests
             };
 
             SearchConditionSnapshot snapshot = SearchConditionSnapshot.From(3, source);
+            source.CategoryInternal = "CHANGED_CATEGORY_INTERNAL";
+            source.CategoryDisplay = "CHANGED_CATEGORY_DISPLAY";
+            source.PropertyInternal = "CHANGED_PROPERTY_INTERNAL";
+            source.PropertyDisplay = "CHANGED_PROPERTY_DISPLAY";
             source.Value = "CHANGED";
 
             Assert.AreEqual(3, snapshot.ConditionIndex);
             Assert.AreEqual(4, snapshot.DisplayIndex);
+            Assert.AreEqual("LcOaItem", snapshot.CategoryInternal);
             Assert.AreEqual("Item", snapshot.CategoryDisplay);
+            Assert.AreEqual("LcOaSceneBaseUserName", snapshot.PropertyInternal);
             Assert.AreEqual("名称", snapshot.PropertyDisplay);
             Assert.AreEqual("equals", snapshot.Test);
             Assert.AreEqual("M14-101", snapshot.Value);

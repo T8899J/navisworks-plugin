@@ -15,7 +15,7 @@ namespace JiePinPai.Navisworks
         /// </summary>
         /// <param name="doc">当前 Navisworks 文档。</param>
         /// <param name="results">所有条件的匹配结果列表。</param>
-        /// <returns>去重后的总匹配 ModelItem 列表。</returns>
+        /// <returns>写入后从 Navisworks 当前选择读取的实际 ModelItem 快照。</returns>
         public static List<ModelItem> SetSelection(
             Document doc,
             List<SearchResult> results,
@@ -56,7 +56,7 @@ namespace JiePinPai.Navisworks
                 actualSelectedItems.Count,
                 actualSelectedItems);
 
-            return selectionList;
+            return actualSelectedItems;
         }
 
         public static List<ModelItem> SetSelection(
@@ -90,7 +90,7 @@ namespace JiePinPai.Navisworks
                 actualSelectedItems.Count,
                 actualSelectedItems);
 
-            return selectionList;
+            return actualSelectedItems;
         }
 
         /// <summary>

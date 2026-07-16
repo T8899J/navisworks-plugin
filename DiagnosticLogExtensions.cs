@@ -80,23 +80,31 @@ namespace JiePinPai.Navisworks
             session.StartSection("查询条件结果");
             foreach (SearchResult result in list)
             {
+                if (result == null)
+                {
+                    AppendLine(session, "(empty search result)");
+                    continue;
+                }
+
                 SearchConditionSnapshot condition = result.Condition;
                 AppendLine(
                     session,
-                    $"#{condition.DisplayIndex} " +
+                    $"#{condition?.DisplayIndex.ToString() ?? "(empty)"} " +
                     $"状态={SearchResultPolicy.GetDisplayName(result.Status)}, " +
-                    $"分类={Safe(condition.GetCategoryName())}, " +
-                    $"属性={Safe(condition.GetPropertyName())}, " +
-                    $"方式={Safe(condition.Test)}, " +
-                    $"查询值={Safe(condition.Value)}, " +
+                    $"分类显示={Safe(condition?.CategoryDisplay)}, " +
+                    $"分类内部={Safe(condition?.CategoryInternal)}, " +
+                    $"属性显示={Safe(condition?.PropertyDisplay)}, " +
+                    $"属性内部={Safe(condition?.PropertyInternal)}, " +
+                    $"方式={Safe(condition?.Test)}, " +
+                    $"查询值={Safe(condition?.Value)}, " +
                     $"匹配数={result.MatchCount}, " +
                     $"说明={Safe(result.StatusMessage)}");
             }
 
-            AppendLine(session, $"已找到: {list.Count(r => r.Status == SearchResultStatus.Found)}");
-            AppendLine(session, $"未找到: {list.Count(r => r.Status == SearchResultStatus.NotFound)}");
-            AppendLine(session, $"重复: {list.Count(r => r.Status == SearchResultStatus.Duplicate)}");
-            AppendLine(session, $"条件异常: {list.Count(r => r.Status == SearchResultStatus.ConditionInvalid)}");
+            AppendLine(session, $"已找到: {list.Count(r => r != null && r.Status == SearchResultStatus.Found)}");
+            AppendLine(session, $"未找到: {list.Count(r => r != null && r.Status == SearchResultStatus.NotFound)}");
+            AppendLine(session, $"重复: {list.Count(r => r != null && r.Status == SearchResultStatus.Duplicate)}");
+            AppendLine(session, $"条件异常: {list.Count(r => r != null && r.Status == SearchResultStatus.ConditionInvalid)}");
             AppendLine(session, $"隐藏门禁通过: {(hideGatePassed ? "是" : "否")}");
         }
 
@@ -124,6 +132,7 @@ namespace JiePinPai.Navisworks
             int protectedItemsCount,
             int finalKeepCount,
             int actualSelectionCount,
+            bool actualSelectionMatchesFinalKeep,
             bool hideWillExecute)
         {
             session.StartSection("最终保留集合");
@@ -131,6 +140,7 @@ namespace JiePinPai.Navisworks
             AppendLine(session, $"protectedItems count: {protectedItemsCount}");
             AppendLine(session, $"finalKeepItems count: {finalKeepCount}");
             AppendLine(session, $"CurrentSelection count after write: {actualSelectionCount}");
+            AppendLine(session, $"CurrentSelection exactly matches finalKeepItems: {actualSelectionMatchesFinalKeep}");
             AppendLine(session, $"Hide Unselected will execute: {hideWillExecute}");
         }
 

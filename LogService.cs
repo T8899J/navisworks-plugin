@@ -38,6 +38,9 @@ namespace JiePinPai.Navisworks
         {
             try
             {
+                List<SearchResult> resultList = (results ?? new List<SearchResult>())
+                    .Where(result => result != null)
+                    .ToList();
                 string xmlDir = Path.GetDirectoryName(xmlFilePath) ?? ".";
                 string xmlName = Path.GetFileNameWithoutExtension(xmlFilePath);
                 string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
@@ -56,7 +59,7 @@ namespace JiePinPai.Navisworks
                 int invalidCount = 0;
 
                 sb.AppendLine("--- 查询结果 ---");
-                foreach (SearchResult result in results)
+                foreach (SearchResult result in resultList)
                 {
                     switch (result.Status)
                     {
@@ -69,21 +72,25 @@ namespace JiePinPai.Navisworks
                     SearchConditionSnapshot condition = result.Condition;
                     sb.AppendLine(
                         $"[{SearchResultPolicy.GetDisplayName(result.Status)}] " +
-                        $"#{condition.DisplayIndex} " +
-                        $"{condition.GetCategoryName()} / {condition.GetPropertyName()} / " +
-                        $"{condition.Test} / {condition.Value} → " +
-                        $"匹配 {result.MatchCount} 个对象；{result.StatusMessage}");
+                        $"#{condition?.DisplayIndex.ToString() ?? "(empty)"} " +
+                        $"分类显示={Safe(condition?.CategoryDisplay)}, " +
+                        $"分类内部={Safe(condition?.CategoryInternal)}, " +
+                        $"属性显示={Safe(condition?.PropertyDisplay)}, " +
+                        $"属性内部={Safe(condition?.PropertyInternal)}, " +
+                        $"方式={Safe(condition?.Test)}, " +
+                        $"查询值={Safe(condition?.Value)} → " +
+                        $"匹配 {result.MatchCount} 个对象；{Safe(result.StatusMessage)}");
                 }
 
                 sb.AppendLine(string.Empty);
                 sb.AppendLine("--- 汇总 ---");
-                sb.AppendLine($"总条件数: {results.Count}");
+                sb.AppendLine($"总条件数: {resultList.Count}");
                 sb.AppendLine($"已找到: {foundCount}");
                 sb.AppendLine($"未找到: {notFoundCount}");
                 sb.AppendLine($"重复: {duplicateCount}");
                 sb.AppendLine($"条件异常: {invalidCount}");
                 sb.AppendLine($"总计匹配对象数（去重）: {totalMatchedCount}");
-                sb.AppendLine($"唯一性校验: {(SearchResultPolicy.CanHide(results.Select(r => r.Status)) ? "通过" : "未通过")}");
+                sb.AppendLine($"唯一性校验: {(SearchResultPolicy.CanHide(resultList.Select(r => r.Status)) ? "通过" : "未通过")}");
 
                 if (hideExecuted)
                 {
@@ -129,6 +136,11 @@ namespace JiePinPai.Navisworks
             }
 
             return doc.ToString();
+        }
+
+        private static string Safe(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "(empty)" : value;
         }
     }
 }

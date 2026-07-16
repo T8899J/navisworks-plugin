@@ -13,6 +13,7 @@ navisworks-plugin/
 ├── XmlSearchParser.cs              # 解析 Navisworks exchange XML → List<SearchCondition>
 ├── ModelItemMatcher.cs             # Navisworks 原生 Search.FindAll() API 封装
 ├── SelectionService.cs             # 设置 doc.CurrentSelection
+├── SelectionEquivalencePolicy.cs   # 最终保留集合与实际选择的纯集合等价策略
 ├── HideServiceFixed.cs             # Hide Unselected 服务
 ├── ProtectedKeepService.cs          # STR 保护节点查找
 ├── LogService.cs                   # UTF-8 查找日志

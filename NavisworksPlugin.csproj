@@ -82,6 +82,7 @@
     <Compile Include="XmlSearchParser.cs" />
     <Compile Include="ModelItemMatcher.cs" />
     <Compile Include="SelectionService.cs" />
+    <Compile Include="SelectionEquivalencePolicy.cs" />
     <Compile Include="HideServiceFixed.cs" />
     <Compile Include="ProtectedKeepService.cs" />
     <Compile Include="DiagnosticLogSession.cs" />

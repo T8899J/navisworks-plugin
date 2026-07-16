@@ -40,6 +40,7 @@ SearchResultPolicy.cs      — 四态唯一性结果策略
 SearchResultStatus.cs      — 已找到、未找到、重复、条件异常状态
 ModelItemMatcher.cs        — 匹配引擎 (原生 Search.FindAll API)
 SelectionService.cs        — 选中 + 创建 SelectionSet
+SelectionEquivalencePolicy.cs — 最终保留集合与实际选择的纯集合等价策略
 HideServiceFixed.cs        — 隐藏未选中 (COM)
 LogService.cs              — UTF-8 查找日志
 DiagnosticLogSession.cs    — 诊断日志会话
