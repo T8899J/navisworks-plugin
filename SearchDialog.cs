@@ -821,55 +821,57 @@ namespace JiePinPai.Navisworks
 
             if (result.Status == SearchResultStatus.Duplicate)
             {
-                List<ModelItem> selectionBeforeInspection =
-                    SnapshotCurrentSelection(_doc);
-                Exception inspectionError = null;
-                Exception restorationError = null;
-                try
+                using (var selectionBeforeInspection = new ModelItemCollection(
+                    _doc.CurrentSelection.SelectedItems))
                 {
-                    List<ModelItem> selected = SelectionService.SetSelection(
-                        _doc,
-                        result.MatchedItems);
-                    MessageBox.Show(
-                        this,
-                        $"已临时选中该重复结果对应的 {selected.Count} 个对象。\n\n" +
-                        $"关闭此提示后，将恢复定位前的 {selectionBeforeInspection.Count} 个对象。\n" +
-                        "之后可直接使用“隐藏未选中”，无需重新导入或重新搜索。",
-                        "傑出品·临时查看重复结果",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-                }
-                catch (Exception ex)
-                {
-                    inspectionError = ex;
-                }
-                finally
-                {
+                    Exception inspectionError = null;
+                    Exception restorationError = null;
                     try
                     {
-                        RestoreSelection(_doc, selectionBeforeInspection);
+                        List<ModelItem> selected = SelectionService.SetSelection(
+                            _doc,
+                            result.MatchedItems);
+                        MessageBox.Show(
+                            this,
+                            $"已临时选中该重复结果对应的 {selected.Count} 个对象。\n\n" +
+                            $"关闭此提示后，将恢复定位前的 {selectionBeforeInspection.Count} 个对象。\n" +
+                            "之后可直接使用“隐藏未选中”，无需重新导入或重新搜索。",
+                            "傑出品·临时查看重复结果",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
                     }
                     catch (Exception ex)
                     {
-                        restorationError = ex;
+                        inspectionError = ex;
                     }
-                }
-
-                if (inspectionError != null || restorationError != null)
-                {
-                    string details = inspectionError?.Message ?? string.Empty;
-                    if (restorationError != null)
+                    finally
                     {
-                        if (!string.IsNullOrEmpty(details))
-                            details += "\n\n";
-                        details += "恢复原选择失败：" + restorationError.Message;
+                        try
+                        {
+                            _doc.CurrentSelection.CopyFrom(selectionBeforeInspection);
+                        }
+                        catch (Exception ex)
+                        {
+                            restorationError = ex;
+                        }
                     }
-                    MessageBox.Show(
-                        this,
-                        "临时查看重复结果未完整完成：\n" + details,
-                        "傑出品·定位失败",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error);
+
+                    if (inspectionError != null || restorationError != null)
+                    {
+                        string details = inspectionError?.Message ?? string.Empty;
+                        if (restorationError != null)
+                        {
+                            if (!string.IsNullOrEmpty(details))
+                                details += "\n\n";
+                            details += "恢复原选择失败：" + restorationError.Message;
+                        }
+                        MessageBox.Show(
+                            this,
+                            "临时查看重复结果未完整完成：\n" + details,
+                            "傑出品·定位失败",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error);
+                    }
                 }
                 return;
             }
@@ -2695,17 +2697,6 @@ namespace JiePinPai.Navisworks
             foreach (ModelItem _ in doc.CurrentSelection.SelectedItems)
                 count++;
             return count;
-        }
-
-        private static void RestoreSelection(Document doc, IEnumerable<ModelItem> items)
-        {
-            using (var selection = new ModelItemCollection())
-            {
-                foreach (ModelItem item in items)
-                    selection.Add(item);
-
-                doc.CurrentSelection.CopyFrom(selection);
-            }
         }
 
         private static List<ModelItem> SnapshotCurrentSelection(Document doc)
