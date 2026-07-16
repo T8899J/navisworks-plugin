@@ -198,18 +198,25 @@ powershell -ExecutionPolicy Bypass -File scripts\install_2023.ps1
 
 CSV、普通日志和诊断日志均分别记录 `CategoryDisplay`、`CategoryInternal`、`PropertyDisplay`、`PropertyInternal`，以及比较方式、查询值、状态、匹配数量和说明。CSV 对逗号、双引号和换行进行标准转义，因此查询值包含这些字符时仍可保持列完整。用户开启诊断日志后，额外记录范围、模型前缀、STR 保护、请求与实际选择的精确校验和隐藏决策。
 
-示例：
+格式示例（路径和时间已简化）：
 
 ```
 ===== 傑出品 Navisworks 查找日志 =====
-条件: SmartPlant 3D / System Path / contains / P-001
-状态: 重复
-匹配数量: 3
-说明: 当前范围内匹配多个对象；隐藏未选中已阻止。
+XML 文件: <源 XML 路径>
+查找时间: <搜索时间>
 
-条件: SmartPlant 3D / System Path / equals / P-002
-状态: 已找到
-匹配数量: 1
+--- 查询结果 ---
+[重复] #1 分类显示=SmartPlant 3D, 分类内部=SP3D, 属性显示=System Path, 属性内部=System Path, 方式=contains, 查询值=P-001 → 匹配 3 个对象；当前选定范围内匹配 3 个对象，要求唯一。
+[已找到] #2 分类显示=Item, 分类内部=LcOaItem, 属性显示=名称, 属性内部=LcOaSceneBaseUserName, 方式=equals, 查询值=M14-101 → 匹配 1 个对象；当前选定范围内唯一匹配 1 个对象。
+
+--- 汇总 ---
+总条件数: 2
+已找到: 1
+未找到: 0
+重复: 1
+条件异常: 0
+总计匹配对象数（去重）: 4
+唯一性校验: 未通过
 ```
 
 ## 安全流程
