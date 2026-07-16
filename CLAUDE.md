@@ -42,7 +42,7 @@ ModelItemMatcher.cs        — 匹配引擎 (原生 Search.FindAll API)
 SelectionService.cs        — 选中 + 创建 SelectionSet
 SelectionEquivalencePolicy.cs — 最终保留集合与实际选择的纯集合等价策略
 HideServiceFixed.cs        — 隐藏未选中 (COM)
-LogService.cs              — UTF-8 查找日志
+LogService.cs              — 可选诊断日志会话入口
 DiagnosticLogSession.cs    — 诊断日志会话
 DiagnosticLogExtensions.cs  — 诊断日志扩展方法
 ProtectedKeepService.cs    — STR 保护节点查找 (BFS)
@@ -53,7 +53,7 @@ ProtectedKeepService.cs    — STR 保护节点查找 (BFS)
 - **Navisworks 原生 Search API** — `Search.FindAll()` 在 C++ 引擎层执行，不通过 COM 手动遍历（100~1000x 性能差异）
 - **SelectionSet 而非自定义集合** — 复用 Navisworks 原生 SelectionSet API，用户已熟悉其操作方式。模式：`new SelectionSet(collection)` + `doc.SelectionSets.AddCopy()` + `selectionSet.Dispose()`
 - **STR 节点保护** — BFS 从 RootItem 按 DisplayName 查找 `{prefix}-STR`，命中即停（从遍历 60K 节点降为 3-4 次比较）
-- **搜索后选中再隐藏** — 两段式安全设计；每个条件必须恰好匹配 1 个对象，未找到、重复或条件异常任一出现即禁止隐藏
+- **搜索后选中再隐藏** — 问题结果默认暂停隐藏，用户明确确认后可继续；自动流程和主界面按钮共用 STR、最终集合与实际选择校验，覆盖确认只绕过唯一性要求
 
 ## 禁止事项
 

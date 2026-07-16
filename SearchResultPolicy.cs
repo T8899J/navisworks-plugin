@@ -37,6 +37,44 @@ namespace JiePinPai.Navisworks
             return hasAny;
         }
 
+        public static bool CanProceedWithHide(
+            IEnumerable<SearchResultStatus> statuses,
+            bool uniquenessOverrideConfirmed)
+        {
+            if (statuses == null)
+                return false;
+
+            bool hasAny = false;
+            foreach (SearchResultStatus status in statuses)
+            {
+                hasAny = true;
+                if (status != SearchResultStatus.Found && !uniquenessOverrideConfirmed)
+                    return false;
+            }
+
+            return hasAny;
+        }
+
+        public static bool CanOfferManualHide(
+            IEnumerable<SearchResultStatus> statuses,
+            int totalMatchedCount,
+            bool hasScopeSnapshot,
+            bool hideAlreadyExecuted)
+        {
+            if (statuses == null
+                || totalMatchedCount <= 0
+                || !hasScopeSnapshot
+                || hideAlreadyExecuted)
+            {
+                return false;
+            }
+
+            foreach (SearchResultStatus status in statuses)
+                return true;
+
+            return false;
+        }
+
         public static bool MatchesFilter(
             SearchResultStatus status,
             SearchResultFilter filter)

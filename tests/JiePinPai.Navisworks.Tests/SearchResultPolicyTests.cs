@@ -54,6 +54,72 @@ namespace JiePinPai.Navisworks.Tests
         }
 
         [TestMethod]
+        public void CanProceedWithHide_AllowsProblemsOnlyAfterExplicitOverride()
+        {
+            var validStatuses = new[]
+            {
+                SearchResultStatus.Found,
+                SearchResultStatus.Found,
+            };
+            var problemStatuses = new[]
+            {
+                SearchResultStatus.Found,
+                SearchResultStatus.Duplicate,
+                SearchResultStatus.NotFound,
+            };
+
+            Assert.IsTrue(SearchResultPolicy.CanProceedWithHide(validStatuses, false));
+            Assert.IsTrue(SearchResultPolicy.CanProceedWithHide(validStatuses, true));
+            Assert.IsFalse(SearchResultPolicy.CanProceedWithHide(problemStatuses, false));
+            Assert.IsTrue(SearchResultPolicy.CanProceedWithHide(problemStatuses, true));
+            Assert.IsFalse(SearchResultPolicy.CanProceedWithHide(null, true));
+            Assert.IsFalse(SearchResultPolicy.CanProceedWithHide(
+                Array.Empty<SearchResultStatus>(),
+                true));
+        }
+
+        [TestMethod]
+        public void CanOfferManualHide_RequiresCurrentMatchedContextAndUnusedAction()
+        {
+            var statuses = new[]
+            {
+                SearchResultStatus.Found,
+                SearchResultStatus.Duplicate,
+            };
+
+            Assert.IsTrue(SearchResultPolicy.CanOfferManualHide(
+                statuses,
+                totalMatchedCount: 2,
+                hasScopeSnapshot: true,
+                hideAlreadyExecuted: false));
+            Assert.IsFalse(SearchResultPolicy.CanOfferManualHide(
+                statuses,
+                totalMatchedCount: 0,
+                hasScopeSnapshot: true,
+                hideAlreadyExecuted: false));
+            Assert.IsFalse(SearchResultPolicy.CanOfferManualHide(
+                statuses,
+                totalMatchedCount: 2,
+                hasScopeSnapshot: false,
+                hideAlreadyExecuted: false));
+            Assert.IsFalse(SearchResultPolicy.CanOfferManualHide(
+                statuses,
+                totalMatchedCount: 2,
+                hasScopeSnapshot: true,
+                hideAlreadyExecuted: true));
+            Assert.IsFalse(SearchResultPolicy.CanOfferManualHide(
+                null,
+                totalMatchedCount: 2,
+                hasScopeSnapshot: true,
+                hideAlreadyExecuted: false));
+            Assert.IsFalse(SearchResultPolicy.CanOfferManualHide(
+                Array.Empty<SearchResultStatus>(),
+                totalMatchedCount: 2,
+                hasScopeSnapshot: true,
+                hideAlreadyExecuted: false));
+        }
+
+        [TestMethod]
         [DataRow(SearchResultStatus.NotFound, SearchResultFilter.Problems, true)]
         [DataRow(SearchResultStatus.Duplicate, SearchResultFilter.Problems, true)]
         [DataRow(SearchResultStatus.ConditionInvalid, SearchResultFilter.Problems, true)]

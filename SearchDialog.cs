@@ -41,6 +41,7 @@ namespace JiePinPai.Navisworks
         private Button _btnSearch;
         private Button _btnExportResults;
         private Button _btnCreateSelectionSet;
+        private Button _btnHideUnselected;
         private Button _btnClose;
 
         // ── 公共操作按钮 ──
@@ -60,6 +61,8 @@ namespace JiePinPai.Navisworks
         private int _lastTotalMatched;
         private bool _lastHideExecuted;
         private string _currentModelPrefix;
+        private List<ModelItem> _lastScopeRoots = new List<ModelItem>();
+        private List<ModelItem> _lastMatchedItemsInScope = new List<ModelItem>();
 
         // ── 列索引常量 ──
         private const int COL_CATEGORY = 0;
@@ -190,6 +193,25 @@ namespace JiePinPai.Navisworks
             };
             _btnCreateSelectionSet.Click += BtnCreateSelectionSet_Click;
 
+            _btnHideUnselected = new Button
+            {
+                Text = "隐藏未选中",
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                FlatAppearance =
+                {
+                    BorderColor = System.Drawing.Color.FromArgb(220, 38, 38),
+                    BorderSize = 1,
+                    MouseOverBackColor = System.Drawing.Color.FromArgb(254, 242, 242),
+                },
+                BackColor = System.Drawing.Color.White,
+                ForeColor = System.Drawing.Color.FromArgb(185, 28, 28),
+                Font = btnFont,
+                UseVisualStyleBackColor = false,
+                Enabled = false,
+            };
+            _btnHideUnselected.Click += BtnHideUnselected_Click;
+
             _btnClose = new Button
             {
                 Text = "关闭",
@@ -211,7 +233,7 @@ namespace JiePinPai.Navisworks
             var bottomLayout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 7,
+                ColumnCount = 9,
                 RowCount = 1,
                 Padding = new Padding(0),
             };
@@ -221,13 +243,16 @@ namespace JiePinPai.Navisworks
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(108)));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
+            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(84)));
             bottomLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             bottomLayout.Controls.Add(_btnSearch, 0, 0);
             bottomLayout.Controls.Add(_btnExportResults, 2, 0);
             bottomLayout.Controls.Add(_btnCreateSelectionSet, 4, 0);
-            bottomLayout.Controls.Add(_btnClose, 6, 0);
+            bottomLayout.Controls.Add(_btnHideUnselected, 6, 0);
+            bottomLayout.Controls.Add(_btnClose, 8, 0);
             bottomPanel.Controls.Add(bottomLayout);
 
             // ── 主布局 ──
@@ -900,11 +925,14 @@ namespace JiePinPai.Navisworks
             _lastTotalMatched = 0;
             _lastHideExecuted = false;
             _currentModelPrefix = null;
+            _lastScopeRoots.Clear();
+            _lastMatchedItemsInScope.Clear();
             _lblResultSummary.Text = message;
             UpdateResultFilterCaptions(Array.Empty<SearchResult>());
             SetActiveResultFilter(SearchResultFilter.All);
             _btnExportResults.Enabled = false;
             _btnCreateSelectionSet.Enabled = false;
+            UpdateHideButtonState();
         }
 
         #endregion
@@ -1277,7 +1305,8 @@ namespace JiePinPai.Navisworks
             T("");
             T("  【模式 B：查找 + 隐藏未选中】");
             T("  搜索并选中后弹窗确认，确认后隐藏不相关的对象，只保留匹配项和 STR 结构节点。");
-            T("  任一条件未找到、重复或条件异常时都会自动拒绝隐藏，防止误隐藏模型。");
+            T("  任一条件未找到、重复或条件异常时会暂停隐藏并显示警告，可返回检查或明确选择继续。");
+            T("  选择继续时会保留所有匹配对象；重复条件的全部匹配对象都会保留。");
             T("");
             T("  【诊断日志（默认关闭）】勾选后每次搜索输出详细诊断文件。日常无需开启，排查问题时使用。");
             G();
@@ -1289,15 +1318,17 @@ namespace JiePinPai.Navisworks
 
             H("第六步：查看结果与后续操作");
             T("");
-            T("  【结果摘要（蓝色区域）】条件总数、找到/未找到条数、总匹配对象数。");
-            T("  【详细列表】[✓] 匹配成功  [✗] 未匹配到。");
+            T("  【结果摘要】显示已找到、未找到、重复、条件异常和总匹配对象数量。");
+            T("  【详细列表】可筛选问题项，并双击定位对应条件或重复对象。");
             T("");
             T("  搜索完成后，底部按钮启用：");
             T("  · 导出结果 → 将匹配结果保存为 CSV/TXT 文件。");
             T("  · 创建选择集 → 将匹配对象持久化为 Navisworks「集合」面板中的选择集。");
             T("    右键该选择集 →「选择」后可批量修改颜色、透明度、隐藏等属性。");
             T("    选择集会随 .nwf 文件保存，关闭插件后仍可使用。");
-            T("  · 隐藏未选中（仅模式 B 生效）→ 弹窗确认后隐藏不相关对象。");
+            T("  · 隐藏未选中 → 使用最近一次有效搜索结果单独执行隐藏，模式 A 搜索后也可使用。");
+            T("    问题结果会再次显示“仍然继续隐藏 / 返回检查”；结果失效或总匹配为 0 时按钮不可用。");
+            T("    最终保留集合为空、STR 风险或实际选择不一致等保护不会被唯一性覆盖确认绕过。");
             G();
 
             H("━━━ 常见问题 ━━━");
@@ -1438,6 +1469,8 @@ namespace JiePinPai.Navisworks
                 return;
             }
 
+            InvalidateSearchResults("正在执行搜索，请稍候。");
+
             bool isSelectOnlyMode = !_chkHideAfterSearch.Checked;
             string modeName = isSelectOnlyMode
                 ? "模式 A：仅查找并选中，不隐藏"
@@ -1449,6 +1482,9 @@ namespace JiePinPai.Navisworks
             int totalMatched = 0;
             bool hideExecuted = false;
             bool resultsFinalized = false;
+            List<ModelItem> scopeRoots = null;
+            List<ModelItem> matchedItemsInScope = null;
+            string modelPrefix = null;
 
             diagnosticLog?.LogMode(modeName);
             diagnosticLog?.LogHideIntent(!isSelectOnlyMode);
@@ -1458,7 +1494,7 @@ namespace JiePinPai.Navisworks
                 Cursor = Cursors.WaitCursor;
                 _btnSearch.Enabled = false;
 
-                List<ModelItem> scopeRoots = SnapshotCurrentSelection(_doc);
+                scopeRoots = SnapshotCurrentSelection(_doc);
                 if (scopeRoots.Count == 0)
                 {
                     diagnosticLog?.LogScopeInfo(scopeRoots, 0);
@@ -1475,7 +1511,6 @@ namespace JiePinPai.Navisworks
                 }
 
                 List<string> modelPrefixes = ExtractModelPrefixes(scopeRoots);
-                string modelPrefix = null;
                 string protectedName = null;
                 if (modelPrefixes.Count == 0)
                 {
@@ -1520,7 +1555,7 @@ namespace JiePinPai.Navisworks
                 results = ModelItemMatcher.MatchAll(
                     _doc, scopeRoots, _conditions);
 
-                List<ModelItem> matchedItemsInScope =
+                matchedItemsInScope =
                     MergeUniqueItems(results.SelectMany(r => r.MatchedItems));
                 totalMatched = matchedItemsInScope.Count;
                 bool resultGatePassed = SearchResultPolicy.CanHide(
@@ -1532,240 +1567,20 @@ namespace JiePinPai.Navisworks
                     0);
                 diagnosticLog?.LogSearchResults(results, resultGatePassed);
 
-                if (!isSelectOnlyMode && !resultGatePassed)
-                {
-                    int notFoundCount = results.Count(
-                        r => r.Status == SearchResultStatus.NotFound);
-                    int duplicateCount = results.Count(
-                        r => r.Status == SearchResultStatus.Duplicate);
-                    int invalidCount = results.Count(
-                        r => r.Status == SearchResultStatus.ConditionInvalid);
-                    string reason =
-                        $"结果未通过唯一性校验：未找到 {notFoundCount} 条，" +
-                        $"重复 {duplicateCount} 条，条件异常 {invalidCount} 条。";
-
-                    diagnosticLog?.LogDecision(reason);
-                    diagnosticLog?.LogHideBlocked(reason);
-                    FinalizeSearchResults(results, totalMatched, false, modelPrefix);
-                    resultsFinalized = true;
-
-                    string inspectionSelectionNote = string.Empty;
-                    if (matchedItemsInScope.Count > 0)
-                    {
-                        try
-                        {
-                            SelectionService.SetSelection(
-                                _doc,
-                                matchedItemsInScope,
-                                diagnosticLog);
-                            int actualProblemSelectionCount =
-                                SnapshotCurrentSelection(_doc).Count;
-                            diagnosticLog?.LogDecision(
-                                $"问题结果定位实际选择数量: {actualProblemSelectionCount}");
-                        }
-                        catch (Exception selectionEx)
-                        {
-                            diagnosticLog?.LogException(
-                                "唯一性门禁失败后的问题结果自动定位选择",
-                                selectionEx);
-                            inspectionSelectionNote =
-                                "\n\n自动定位问题对象失败，请在结果页手动检查匹配对象。";
-                        }
-                    }
-
-                    MessageBox.Show(
-                        this,
-                        reason +
-                        "\n\n已阻止隐藏未选中。结果页保留全部问题项；" +
-                        "修改条件或模型数据后请重新搜索。" +
-                        "\n再次搜索前，请在选择树中重新选择目标模型范围。" +
-                        inspectionSelectionNote,
-                        "傑出品·唯一性校验未通过",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
-                }
-
-                ProtectedKeepResult protectedKeepResult;
-                ModelItem protectedNode = scopeRoots.Find(
-                    r => string.Equals(r.DisplayName, protectedName, StringComparison.Ordinal));
-                if (protectedNode != null)
-                {
-                    protectedKeepResult = ProtectedKeepService.BuildFromNode(
-                        protectedName, protectedNode);
-                }
-                else
-                {
-                    protectedKeepResult = ProtectedKeepService.FindProtectedItems(
-                        _doc, protectedName);
-                }
-                diagnosticLog?.LogProtectedNodeStats(
-                    protectedKeepResult.TargetNodeName,
-                    protectedKeepResult.Found,
-                    protectedKeepResult.MatchMode,
-                    protectedKeepResult.MatchedNodeCount,
-                    protectedKeepResult.DescendantCount,
-                    protectedKeepResult.ProtectedItems.Count);
-
-                if (totalMatched == 0)
-                {
-                    if (!isSelectOnlyMode)
-                    {
-                        diagnosticLog?.LogHidePrecheck(0, 0);
-                        diagnosticLog?.LogHideBlocked();
-                    }
-
-                    MessageBox.Show(this,
-                        "在选定范围内没有搜索到任何对象，已取消隐藏，防止隐藏整个模型。",
-                        "傑出品·查找结果",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
-                else
-                {
-                    if (protectedKeepResult.ProtectedItems.Count == 0 && !isSelectOnlyMode)
-                    {
-                        DialogResult protectedChoice = MessageBox.Show(this,
-                            $"未找到当前模型对应的 STR 节点：{protectedName}。继续后该结构节点可能会被隐藏，是否继续？",
-                            "傑出品·警告",
-                            MessageBoxButtons.YesNo,
-                            MessageBoxIcon.Warning);
-                        diagnosticLog?.LogDecision(
-                            $"Protected node warning choice: {protectedChoice}");
-                        if (protectedChoice != DialogResult.Yes)
-                        {
-                            FinalizeSearchResults(results, totalMatched, false, modelPrefix);
-                            resultsFinalized = true;
-                            return;
-                        }
-                    }
-
-                    List<ModelItem> finalKeepItems = MergeUniqueItems(
-                        matchedItemsInScope,
-                        protectedKeepResult.ProtectedItems);
-
-                    if (finalKeepItems.Count == 0)
-                    {
-                        diagnosticLog?.LogFinalKeepStats(
-                            matchedItemsInScope.Count,
-                            protectedKeepResult.ProtectedItems.Count,
-                            finalKeepItems.Count,
-                            0,
-                            false,
-                            false);
-                        diagnosticLog?.LogDecision("Blocked: finalKeepItems count is 0.");
-                        diagnosticLog?.LogHidePrecheck(0, 0);
-                        diagnosticLog?.LogHideBlocked();
-                        FinalizeSearchResults(results, totalMatched, false, modelPrefix);
-                        resultsFinalized = true;
-                        MessageBox.Show(this,
-                            "最终保留集合为空，已取消隐藏。",
-                            "傑出品·保护",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
-                        return;
-                    }
-
-                    List<ModelItem> actualSelectionItems = SelectionService.SetSelection(
-                        _doc,
-                        finalKeepItems,
-                        diagnosticLog);
-                    int actualSelectionCount = actualSelectionItems.Count;
-                    bool actualSelectionMatchesFinalKeep =
-                        SelectionEquivalencePolicy.AreEquivalent(
-                            finalKeepItems,
-                            actualSelectionItems);
-                    bool willHide = !isSelectOnlyMode
-                        && resultGatePassed
-                        && totalMatched > 0
-                        && finalKeepItems.Count > 0
-                        && actualSelectionCount > 0
-                        && actualSelectionMatchesFinalKeep;
-
-                    diagnosticLog?.LogFinalKeepStats(
-                        matchedItemsInScope.Count,
-                        protectedKeepResult.ProtectedItems.Count,
-                        finalKeepItems.Count,
-                        actualSelectionCount,
-                        actualSelectionMatchesFinalKeep,
-                        willHide);
-
-                    if (actualSelectionCount == 0)
-                    {
-                        diagnosticLog?.LogDecision("Blocked: CurrentSelection count is 0.");
-                        diagnosticLog?.LogHidePrecheck(finalKeepItems.Count, actualSelectionCount);
-                        diagnosticLog?.LogHideBlocked();
-                        FinalizeSearchResults(results, totalMatched, false, modelPrefix);
-                        resultsFinalized = true;
-                        MessageBox.Show(this,
-                            "写入最终保留集合后当前选择为空，已取消隐藏。",
-                            "傑出品·保护",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
-                        return;
-                    }
-
-                    if (!actualSelectionMatchesFinalKeep)
-                    {
-                        diagnosticLog?.LogDecision(
-                            "Blocked: CurrentSelection is not set-equivalent to " +
-                            $"finalKeepItems. requested={finalKeepItems.Count}, " +
-                            $"actual={actualSelectionCount}.");
-                        diagnosticLog?.LogHidePrecheck(finalKeepItems.Count, actualSelectionCount);
-                        diagnosticLog?.LogHideBlocked();
-                        FinalizeSearchResults(results, totalMatched, false, modelPrefix);
-                        resultsFinalized = true;
-                        MessageBox.Show(this,
-                            "Navisworks 当前实际选择与请求的最终保留集合不完全一致，已取消隐藏。\n\n" +
-                            $"请求数量：{finalKeepItems.Count}\n" +
-                            $"实际选择数量：{actualSelectionCount}\n\n" +
-                            "实际选择可能存在额外或缺失对象，请检查模型选择状态后重新搜索。",
-                            "傑出品·选择校验",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Warning);
-                        return;
-                    }
-
-                    if (isSelectOnlyMode)
-                    {
-                        string testModeMsg =
-                            $"【模式 A：仅查找并选中】\n\n" +
-                            $"范围内命中对象：{matchedItemsInScope.Count} 个\n" +
-                            $"当前模型 STR 保留对象：{protectedKeepResult.ProtectedItems.Count} 个\n" +
-                            $"最终保留对象：{finalKeepItems.Count} 个\n\n" +
-                            "插件已选中最终保留对象，未执行隐藏。";
-                        MessageBox.Show(this, testModeMsg,
-                            "傑出品·模式 A", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    }
-                    else
-                    {
-                        DialogResult choice = MessageBox.Show(this,
-                            $"范围内命中对象数量：{matchedItemsInScope.Count}\n" +
-                            $"当前模型 STR 保留对象数量：{protectedKeepResult.ProtectedItems.Count}\n" +
-                            $"最终保留对象数量：{finalKeepItems.Count}\n" +
-                            $"当前 Navisworks 实际选择数量：{actualSelectionCount}\n\n" +
-                            "是否执行隐藏未选中，只保留当前最终选择对象？",
-                            "傑出品·隐藏确认",
-                            MessageBoxButtons.YesNoCancel,
-                            MessageBoxIcon.Question);
-
-                        diagnosticLog?.LogHidePrompt(
-                            finalKeepItems.Count,
-                            actualSelectionCount,
-                            choice.ToString());
-
-                        if (choice == DialogResult.Yes)
-                        {
-                            hideExecuted = HideService.HideUnselected(
-                                _doc,
-                                finalKeepItems,
-                                finalKeepItems.Count,
-                                diagnosticLog);
-                        }
-                    }
-                }
-
-                FinalizeSearchResults(results, totalMatched, hideExecuted, modelPrefix);
+                _lastScopeRoots = new List<ModelItem>(scopeRoots);
+                _lastMatchedItemsInScope = new List<ModelItem>(matchedItemsInScope);
+                FinalizeSearchResults(results, totalMatched, false, modelPrefix);
                 resultsFinalized = true;
+                Cursor = Cursors.Default;
+
+                hideExecuted = ExecuteCachedResultAction(
+                    isSelectOnlyMode,
+                    diagnosticLog);
+                if (hideExecuted)
+                {
+                    _lastHideExecuted = true;
+                    UpdateHideButtonState();
+                }
             }
             catch (Exception ex)
             {
@@ -1773,6 +1588,12 @@ namespace JiePinPai.Navisworks
 
                 if (results != null && !resultsFinalized)
                 {
+                    _lastScopeRoots = scopeRoots == null
+                        ? new List<ModelItem>()
+                        : new List<ModelItem>(scopeRoots);
+                    _lastMatchedItemsInScope = matchedItemsInScope == null
+                        ? new List<ModelItem>()
+                        : new List<ModelItem>(matchedItemsInScope);
                     FinalizeSearchResults(
                         results,
                         totalMatched,
@@ -1793,22 +1614,488 @@ namespace JiePinPai.Navisworks
                 diagnosticLog?.WriteToFile();
                 Cursor = Cursors.Default;
                 _btnSearch.Enabled = true;
+                UpdateHideButtonState();
             }
         }
 
-        private void WriteLegacyResultLog(
-            List<SearchResult> results,
-            int totalMatched,
-            bool hideExecuted)
+        private void BtnHideUnselected_Click(object sender, EventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(_currentXmlPath))
+            UpdateHideButtonState();
+            if (!_btnHideUnselected.Enabled)
+            {
+                MessageBox.Show(
+                    this,
+                    "当前没有可用的搜索结果，请重新选择模型范围并执行搜索。",
+                    "傑出品·隐藏未选中",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            var diagnosticLog = _chkDiagnosticLog.Checked
+                ? LogService.CreateDiagnosticSession(_doc, _currentXmlPath, _conditions.Count)
+                : null;
+
+            try
+            {
+                _btnSearch.Enabled = false;
+                _btnHideUnselected.Enabled = false;
+                diagnosticLog?.LogMode("主界面：使用最近一次有效搜索结果执行隐藏");
+                diagnosticLog?.LogHideIntent(true);
+                diagnosticLog?.LogSearchResults(
+                    _lastResults,
+                    SearchResultPolicy.CanHide(_lastResults.Select(r => r.Status)));
+
+                bool hideExecuted = ExecuteCachedResultAction(false, diagnosticLog);
+                if (hideExecuted)
+                    _lastHideExecuted = true;
+            }
+            catch (Exception ex)
+            {
+                diagnosticLog?.LogException("主界面执行隐藏", ex);
+                MessageBox.Show(
+                    this,
+                    "隐藏失败：\n" + ex.Message,
+                    "傑出品·隐藏未选中",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+            finally
+            {
+                diagnosticLog?.WriteToFile();
+                _btnSearch.Enabled = true;
+                UpdateHideButtonState();
+            }
+        }
+
+        private bool ExecuteCachedResultAction(
+            bool selectOnly,
+            DiagnosticLogSession diagnosticLog)
+        {
+            if (_lastResults == null
+                || _lastResults.Count == 0
+                || _lastScopeRoots == null
+                || _lastScopeRoots.Count == 0
+                || _lastMatchedItemsInScope == null)
+            {
+                diagnosticLog?.LogDecision("Blocked: cached search context is unavailable.");
+                diagnosticLog?.LogHideBlocked("搜索结果上下文已失效。");
+                MessageBox.Show(
+                    this,
+                    "搜索结果上下文已失效，请重新选择模型范围并执行搜索。",
+                    "傑出品·结果已失效",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                InvalidateSearchResults("搜索结果已失效，请重新执行搜索。");
+                return false;
+            }
+
+            List<SearchResultStatus> statuses = _lastResults
+                .Select(result => result.Status)
+                .ToList();
+            bool resultGatePassed = SearchResultPolicy.CanHide(statuses);
+            bool uniquenessOverrideConfirmed = false;
+
+            if (!selectOnly && !resultGatePassed)
+            {
+                string reason = BuildUniquenessFailureReason(_lastResults);
+                string inspectionSelectionNote = TrySelectProblemMatches(diagnosticLog);
+                diagnosticLog?.LogDecision(reason);
+
+                uniquenessOverrideConfirmed = ShowUniquenessOverrideDialog(
+                    _lastResults,
+                    _lastTotalMatched,
+                    inspectionSelectionNote);
+                diagnosticLog?.LogHidePrompt(
+                    _lastTotalMatched,
+                    SnapshotCurrentSelection(_doc).Count,
+                    uniquenessOverrideConfirmed
+                        ? "用户选择仍然继续隐藏"
+                        : "用户选择返回检查");
+
+                if (!uniquenessOverrideConfirmed)
+                {
+                    diagnosticLog?.LogHideBlocked(reason);
+                    _tabControl.SelectedTab = _tabResults;
+                    return false;
+                }
+
+                diagnosticLog?.LogDecision("用户已明确确认忽略唯一性问题并继续隐藏。");
+            }
+
+            if (!selectOnly
+                && !SearchResultPolicy.CanProceedWithHide(
+                    statuses,
+                    uniquenessOverrideConfirmed))
+            {
+                diagnosticLog?.LogHideBlocked("唯一性校验未通过且未取得用户覆盖确认。");
+                return false;
+            }
+
+            if (_lastTotalMatched <= 0 || _lastMatchedItemsInScope.Count == 0)
+            {
+                if (!selectOnly)
+                {
+                    diagnosticLog?.LogHidePrecheck(0, 0);
+                    diagnosticLog?.LogHideBlocked();
+                }
+
+                MessageBox.Show(
+                    this,
+                    "在选定范围内没有搜索到任何对象，不能执行隐藏，防止隐藏整个模型。",
+                    "傑出品·查找结果",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return false;
+            }
+
+            string protectedName = _currentModelPrefix + "-STR";
+            ProtectedKeepResult protectedKeepResult;
+            ModelItem protectedNode = _lastScopeRoots.Find(
+                root => string.Equals(
+                    root.DisplayName,
+                    protectedName,
+                    StringComparison.Ordinal));
+            if (protectedNode != null)
+            {
+                protectedKeepResult = ProtectedKeepService.BuildFromNode(
+                    protectedName,
+                    protectedNode);
+            }
+            else
+            {
+                protectedKeepResult = ProtectedKeepService.FindProtectedItems(
+                    _doc,
+                    protectedName);
+            }
+
+            diagnosticLog?.LogProtectedNodeStats(
+                protectedKeepResult.TargetNodeName,
+                protectedKeepResult.Found,
+                protectedKeepResult.MatchMode,
+                protectedKeepResult.MatchedNodeCount,
+                protectedKeepResult.DescendantCount,
+                protectedKeepResult.ProtectedItems.Count);
+
+            if (!selectOnly && protectedKeepResult.ProtectedItems.Count == 0)
+            {
+                DialogResult protectedChoice = MessageBox.Show(
+                    this,
+                    $"未找到当前模型对应的 STR 节点：{protectedName}。\n\n" +
+                    "继续后该结构节点可能会被隐藏，是否继续？",
+                    "傑出品·STR 保护警告",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+                diagnosticLog?.LogDecision(
+                    $"Protected node warning choice: {protectedChoice}");
+                if (protectedChoice != DialogResult.Yes)
+                    return false;
+            }
+
+            List<ModelItem> finalKeepItems = MergeUniqueItems(
+                _lastMatchedItemsInScope,
+                protectedKeepResult.ProtectedItems);
+            if (finalKeepItems.Count == 0)
+            {
+                diagnosticLog?.LogFinalKeepStats(
+                    _lastMatchedItemsInScope.Count,
+                    protectedKeepResult.ProtectedItems.Count,
+                    0,
+                    0,
+                    false,
+                    false);
+                diagnosticLog?.LogDecision("Blocked: finalKeepItems count is 0.");
+                diagnosticLog?.LogHidePrecheck(0, 0);
+                diagnosticLog?.LogHideBlocked();
+                MessageBox.Show(
+                    this,
+                    "最终保留集合为空，已取消隐藏。",
+                    "傑出品·保护",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return false;
+            }
+
+            List<ModelItem> actualSelectionItems = SelectionService.SetSelection(
+                _doc,
+                finalKeepItems,
+                diagnosticLog);
+            int actualSelectionCount = actualSelectionItems.Count;
+            bool actualSelectionMatchesFinalKeep =
+                SelectionEquivalencePolicy.AreEquivalent(
+                    finalKeepItems,
+                    actualSelectionItems);
+            bool willHide = !selectOnly
+                && SearchResultPolicy.CanProceedWithHide(
+                    statuses,
+                    uniquenessOverrideConfirmed)
+                && finalKeepItems.Count > 0
+                && actualSelectionCount > 0
+                && actualSelectionMatchesFinalKeep;
+
+            diagnosticLog?.LogFinalKeepStats(
+                _lastMatchedItemsInScope.Count,
+                protectedKeepResult.ProtectedItems.Count,
+                finalKeepItems.Count,
+                actualSelectionCount,
+                actualSelectionMatchesFinalKeep,
+                willHide);
+
+            if (actualSelectionCount == 0)
+            {
+                diagnosticLog?.LogDecision("Blocked: CurrentSelection count is 0.");
+                diagnosticLog?.LogHidePrecheck(finalKeepItems.Count, 0);
+                diagnosticLog?.LogHideBlocked();
+                MessageBox.Show(
+                    this,
+                    "写入最终保留集合后当前选择为空，已取消隐藏。",
+                    "傑出品·保护",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return false;
+            }
+
+            if (!actualSelectionMatchesFinalKeep)
+            {
+                diagnosticLog?.LogDecision(
+                    "Blocked: CurrentSelection is not set-equivalent to " +
+                    $"finalKeepItems. requested={finalKeepItems.Count}, " +
+                    $"actual={actualSelectionCount}.");
+                diagnosticLog?.LogHidePrecheck(finalKeepItems.Count, actualSelectionCount);
+                diagnosticLog?.LogHideBlocked();
+                MessageBox.Show(
+                    this,
+                    "Navisworks 当前实际选择与请求的最终保留集合不完全一致，已取消隐藏。\n\n" +
+                    $"请求数量：{finalKeepItems.Count}\n" +
+                    $"实际选择数量：{actualSelectionCount}\n\n" +
+                    "实际选择可能存在额外或缺失对象，请重新执行搜索。",
+                    "傑出品·选择校验",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return false;
+            }
+
+            if (selectOnly)
+            {
+                string message =
+                    "【模式 A：仅查找并选中】\n\n" +
+                    $"范围内命中对象：{_lastMatchedItemsInScope.Count} 个\n" +
+                    $"当前模型 STR 保留对象：{protectedKeepResult.ProtectedItems.Count} 个\n" +
+                    $"最终保留对象：{finalKeepItems.Count} 个\n\n" +
+                    "插件已选中最终保留对象，未执行隐藏。";
+                MessageBox.Show(
+                    this,
+                    message,
+                    "傑出品·模式 A",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return false;
+            }
+
+            if (!uniquenessOverrideConfirmed)
+            {
+                DialogResult choice = MessageBox.Show(
+                    this,
+                    $"范围内命中对象数量：{_lastMatchedItemsInScope.Count}\n" +
+                    $"当前模型 STR 保留对象数量：{protectedKeepResult.ProtectedItems.Count}\n" +
+                    $"最终保留对象数量：{finalKeepItems.Count}\n" +
+                    $"当前 Navisworks 实际选择数量：{actualSelectionCount}\n\n" +
+                    "是否执行隐藏未选中，只保留当前最终选择对象？",
+                    "傑出品·隐藏确认",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question);
+                diagnosticLog?.LogHidePrompt(
+                    finalKeepItems.Count,
+                    actualSelectionCount,
+                    choice.ToString());
+                if (choice != DialogResult.Yes)
+                    return false;
+            }
+
+            return HideService.HideUnselected(
+                _doc,
+                finalKeepItems,
+                finalKeepItems.Count,
+                diagnosticLog);
+        }
+
+        private string TrySelectProblemMatches(DiagnosticLogSession diagnosticLog)
+        {
+            if (_lastMatchedItemsInScope.Count == 0)
+                return string.Empty;
+
+            try
+            {
+                SelectionService.SetSelection(
+                    _doc,
+                    _lastMatchedItemsInScope,
+                    diagnosticLog);
+                int actualSelectionCount = SnapshotCurrentSelection(_doc).Count;
+                diagnosticLog?.LogDecision(
+                    $"问题结果定位实际选择数量: {actualSelectionCount}");
+                return string.Empty;
+            }
+            catch (Exception ex)
+            {
+                diagnosticLog?.LogException("问题结果自动定位选择", ex);
+                return "\n自动定位问题对象失败，请在结果页手动检查匹配对象。";
+            }
+        }
+
+        private static string BuildUniquenessFailureReason(
+            IEnumerable<SearchResult> results)
+        {
+            List<SearchResult> resultList = (results ?? Enumerable.Empty<SearchResult>())
+                .Where(result => result != null)
+                .ToList();
+            int notFoundCount = resultList.Count(
+                result => result.Status == SearchResultStatus.NotFound);
+            int duplicateCount = resultList.Count(
+                result => result.Status == SearchResultStatus.Duplicate);
+            int invalidCount = resultList.Count(
+                result => result.Status == SearchResultStatus.ConditionInvalid);
+            return $"结果未通过唯一性校验：未找到 {notFoundCount} 条，" +
+                $"重复 {duplicateCount} 条，条件异常 {invalidCount} 条。";
+        }
+
+        private bool ShowUniquenessOverrideDialog(
+            IEnumerable<SearchResult> results,
+            int totalMatched,
+            string inspectionSelectionNote)
+        {
+            List<SearchResult> resultList = (results ?? Enumerable.Empty<SearchResult>())
+                .Where(result => result != null)
+                .ToList();
+            int notFoundCount = resultList.Count(
+                result => result.Status == SearchResultStatus.NotFound);
+            int duplicateCount = resultList.Count(
+                result => result.Status == SearchResultStatus.Duplicate);
+            int invalidCount = resultList.Count(
+                result => result.Status == SearchResultStatus.ConditionInvalid);
+            bool canContinue = totalMatched > 0;
+
+            using (var form = new Form
+            {
+                Text = "傑出品·唯一性校验未通过",
+                ClientSize = new Size(ScaleLogical(640), ScaleLogical(330)),
+                MinimumSize = new Size(ScaleLogical(560), ScaleLogical(300)),
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                StartPosition = FormStartPosition.CenterParent,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                ShowIcon = false,
+                Font = new Font("Microsoft YaHei UI", 9F),
+                BackColor = System.Drawing.Color.FromArgb(248, 250, 252),
+            })
+            {
+                var root = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    ColumnCount = 1,
+                    RowCount = 3,
+                    Padding = new Padding(ScaleLogical(18)),
+                };
+                root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(58)));
+                root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+                root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(62)));
+
+                var title = new Label
+                {
+                    Text = "发现问题，已暂停隐藏",
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
+                    ForeColor = System.Drawing.Color.FromArgb(153, 27, 27),
+                    BackColor = System.Drawing.Color.FromArgb(254, 242, 242),
+                    Padding = new Padding(ScaleLogical(14), 0, 0, 0),
+                };
+
+                string continueNote = canContinue
+                    ? "继续后将保留所有已匹配对象；重复条件的全部匹配对象都会保留，" +
+                      "未找到和条件异常不贡献对象。STR 保护与选择一致性检查仍然执行。"
+                    : "当前没有任何匹配对象，不能继续隐藏，防止隐藏整个模型。";
+                var details = new Label
+                {
+                    Text =
+                        $"未找到：{notFoundCount} 条    重复：{duplicateCount} 条    " +
+                        $"条件异常：{invalidCount} 条\n\n" +
+                        $"当前去重后的匹配对象：{totalMatched} 个\n\n" +
+                        continueNote +
+                        (inspectionSelectionNote ?? string.Empty),
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.TopLeft,
+                    Padding = new Padding(ScaleLogical(4), ScaleLogical(16), ScaleLogical(4), 0),
+                    ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                };
+
+                var buttonLayout = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    ColumnCount = 4,
+                    RowCount = 1,
+                    Padding = new Padding(0, ScaleLogical(12), 0, 0),
+                };
+                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(156)));
+                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(12)));
+                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
+
+                var btnContinue = new Button
+                {
+                    Text = "仍然继续隐藏",
+                    Dock = DockStyle.Fill,
+                    DialogResult = DialogResult.Yes,
+                    Enabled = canContinue,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = System.Drawing.Color.FromArgb(220, 38, 38),
+                    ForeColor = System.Drawing.Color.White,
+                    Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+                    UseVisualStyleBackColor = false,
+                };
+                btnContinue.FlatAppearance.BorderSize = 0;
+
+                var btnReturn = new Button
+                {
+                    Text = "返回检查",
+                    Dock = DockStyle.Fill,
+                    DialogResult = DialogResult.Cancel,
+                    FlatStyle = FlatStyle.Flat,
+                    BackColor = System.Drawing.Color.FromArgb(37, 99, 235),
+                    ForeColor = System.Drawing.Color.White,
+                    Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+                    UseVisualStyleBackColor = false,
+                };
+                btnReturn.FlatAppearance.BorderSize = 0;
+
+                buttonLayout.Controls.Add(btnContinue, 1, 0);
+                buttonLayout.Controls.Add(btnReturn, 3, 0);
+                root.Controls.Add(title, 0, 0);
+                root.Controls.Add(details, 0, 1);
+                root.Controls.Add(buttonLayout, 0, 2);
+                form.Controls.Add(root);
+                form.AcceptButton = btnReturn;
+                form.CancelButton = btnReturn;
+                form.Shown += (sender, args) => btnReturn.Select();
+
+                return form.ShowDialog(this) == DialogResult.Yes;
+            }
+        }
+
+        private void UpdateHideButtonState()
+        {
+            if (_btnHideUnselected == null)
                 return;
 
-            LogService.WriteLog(
-                _currentXmlPath,
-                results,
-                totalMatched,
-                hideExecuted);
+            bool hasScopeSnapshot = _lastScopeRoots != null
+                && _lastScopeRoots.Count > 0;
+            _btnHideUnselected.Enabled = _btnSearch != null
+                && _btnSearch.Enabled
+                && SearchResultPolicy.CanOfferManualHide(
+                    _lastResults?.Select(result => result.Status),
+                    _lastTotalMatched,
+                    hasScopeSnapshot,
+                    _lastHideExecuted);
         }
 
         private void FinalizeSearchResults(
@@ -1826,7 +2113,7 @@ namespace JiePinPai.Navisworks
             ShowResults(results, totalMatched, scopeLabel);
             _btnExportResults.Enabled = results.Count > 0;
             _btnCreateSelectionSet.Enabled = totalMatched > 0;
-            WriteLegacyResultLog(results, totalMatched, hideExecuted);
+            UpdateHideButtonState();
             _tabControl.SelectedTab = _tabResults;
         }
 

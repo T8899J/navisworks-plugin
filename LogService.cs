@@ -1,18 +1,10 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Text;
 using Autodesk.Navisworks.Api;
 
 namespace JiePinPai.Navisworks
 {
     /// <summary>
-    /// 生成查找操作日志文件（旧版兼容）。
-    ///
-    /// 日志保存在 XML 文件同级目录，文件名格式：
-    /// {xml文件名}_查找日志_YYYYMMDD_HHmmss.txt
+    /// 创建用户显式启用的诊断日志会话。
     /// </summary>
     public static class LogService
     {
@@ -25,88 +17,6 @@ namespace JiePinPai.Navisworks
                 GetDocumentDisplayName(doc),
                 xmlFilePath,
                 conditionCount);
-        }
-
-        /// <summary>
-        /// 写入查找日志文件（旧版兼容方法）。
-        /// </summary>
-        public static string WriteLog(
-            string xmlFilePath,
-            List<SearchResult> results,
-            int totalMatchedCount,
-            bool hideExecuted)
-        {
-            try
-            {
-                List<SearchResult> resultList = (results ?? new List<SearchResult>())
-                    .Where(result => result != null)
-                    .ToList();
-                string xmlDir = Path.GetDirectoryName(xmlFilePath) ?? ".";
-                string xmlName = Path.GetFileNameWithoutExtension(xmlFilePath);
-                string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-                string logFileName = $"{xmlName}_查找日志_{timestamp}.txt";
-                string logFilePath = Path.Combine(xmlDir, logFileName);
-
-                StringBuilder sb = new StringBuilder();
-                sb.AppendLine("===== 傑出品 Navisworks 查找日志 =====");
-                sb.AppendLine($"XML 文件: {xmlFilePath}");
-                sb.AppendLine($"查找时间: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-                sb.AppendLine(string.Empty);
-
-                int foundCount = 0;
-                int notFoundCount = 0;
-                int duplicateCount = 0;
-                int invalidCount = 0;
-
-                sb.AppendLine("--- 查询结果 ---");
-                foreach (SearchResult result in resultList)
-                {
-                    switch (result.Status)
-                    {
-                        case SearchResultStatus.Found: foundCount++; break;
-                        case SearchResultStatus.NotFound: notFoundCount++; break;
-                        case SearchResultStatus.Duplicate: duplicateCount++; break;
-                        case SearchResultStatus.ConditionInvalid: invalidCount++; break;
-                    }
-
-                    SearchConditionSnapshot condition = result.Condition;
-                    sb.AppendLine(
-                        $"[{SearchResultPolicy.GetDisplayName(result.Status)}] " +
-                        $"#{condition?.DisplayIndex.ToString() ?? "(empty)"} " +
-                        $"分类显示={Safe(condition?.CategoryDisplay)}, " +
-                        $"分类内部={Safe(condition?.CategoryInternal)}, " +
-                        $"属性显示={Safe(condition?.PropertyDisplay)}, " +
-                        $"属性内部={Safe(condition?.PropertyInternal)}, " +
-                        $"方式={Safe(condition?.Test)}, " +
-                        $"查询值={Safe(condition?.Value)} → " +
-                        $"匹配 {result.MatchCount} 个对象；{Safe(result.StatusMessage)}");
-                }
-
-                sb.AppendLine(string.Empty);
-                sb.AppendLine("--- 汇总 ---");
-                sb.AppendLine($"总条件数: {resultList.Count}");
-                sb.AppendLine($"已找到: {foundCount}");
-                sb.AppendLine($"未找到: {notFoundCount}");
-                sb.AppendLine($"重复: {duplicateCount}");
-                sb.AppendLine($"条件异常: {invalidCount}");
-                sb.AppendLine($"总计匹配对象数（去重）: {totalMatchedCount}");
-                sb.AppendLine($"唯一性校验: {(SearchResultPolicy.CanHide(resultList.Select(r => r.Status)) ? "通过" : "未通过")}");
-
-                if (hideExecuted)
-                {
-                    sb.AppendLine($"隐藏未选中: 已执行");
-                }
-
-                File.WriteAllText(logFilePath, sb.ToString(), Encoding.UTF8);
-
-                return logFilePath;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(
-                    $"写入日志失败: {ex.Message}");
-                return null;
-            }
         }
 
         private static string GetDocumentDisplayName(Document doc)
@@ -136,11 +46,6 @@ namespace JiePinPai.Navisworks
             }
 
             return doc.ToString();
-        }
-
-        private static string Safe(string value)
-        {
-            return string.IsNullOrWhiteSpace(value) ? "(empty)" : value;
         }
     }
 }
