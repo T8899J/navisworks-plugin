@@ -18,12 +18,12 @@ namespace JiePinPai.Navisworks
             SearchCondition source)
         {
             ConditionIndex = conditionIndex;
-            CategoryInternal = source.CategoryInternal ?? string.Empty;
-            CategoryDisplay = source.CategoryDisplay ?? string.Empty;
-            PropertyInternal = source.PropertyInternal ?? string.Empty;
-            PropertyDisplay = source.PropertyDisplay ?? string.Empty;
-            Test = source.Test ?? string.Empty;
-            Value = source.Value ?? string.Empty;
+            CategoryInternal = source?.CategoryInternal ?? string.Empty;
+            CategoryDisplay = source?.CategoryDisplay ?? string.Empty;
+            PropertyInternal = source?.PropertyInternal ?? string.Empty;
+            PropertyDisplay = source?.PropertyDisplay ?? string.Empty;
+            Test = source?.Test ?? string.Empty;
+            Value = source?.Value ?? string.Empty;
         }
 
         public static SearchConditionSnapshot From(
@@ -32,8 +32,6 @@ namespace JiePinPai.Navisworks
         {
             if (conditionIndex < 0)
                 throw new ArgumentOutOfRangeException(nameof(conditionIndex));
-            if (source == null)
-                throw new ArgumentNullException(nameof(source));
 
             return new SearchConditionSnapshot(conditionIndex, source);
         }

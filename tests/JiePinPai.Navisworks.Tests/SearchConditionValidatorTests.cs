@@ -21,6 +21,41 @@ namespace JiePinPai.Navisworks.Tests
         }
 
         [TestMethod]
+        public void TryValidate_AcceptsPropertyInternalFallback()
+        {
+            var condition = new SearchCondition
+            {
+                PropertyInternal = "LcOaSceneBaseUserName",
+                Test = "equals",
+                Value = "M14-101",
+            };
+
+            Assert.IsTrue(SearchConditionValidator.TryValidate(condition, out string error));
+            Assert.AreEqual(string.Empty, error);
+        }
+
+        [TestMethod]
+        public void TryValidate_AcceptsUppercaseContains()
+        {
+            var condition = new SearchCondition
+            {
+                PropertyDisplay = "名称",
+                Test = "CONTAINS",
+                Value = "M14",
+            };
+
+            Assert.IsTrue(SearchConditionValidator.TryValidate(condition, out string error));
+            Assert.AreEqual(string.Empty, error);
+        }
+
+        [TestMethod]
+        public void TryValidate_RejectsNullCondition()
+        {
+            Assert.IsFalse(SearchConditionValidator.TryValidate(null, out string error));
+            Assert.AreEqual("搜索条件为空。", error);
+        }
+
+        [TestMethod]
         [DataRow("", "equals", "M14-101", "属性名不能为空。")]
         [DataRow("名称", "equals", "", "查询值不能为空。")]
         [DataRow("名称", "startsWith", "M14", "匹配方式仅支持 equals 或 contains。")]

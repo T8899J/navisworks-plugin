@@ -46,5 +46,20 @@ namespace JiePinPai.Navisworks.Tests
             Assert.AreEqual("（自动识别）", snapshot.GetCategoryName());
             Assert.AreEqual("（缺失）", snapshot.GetPropertyName());
         }
+
+        [TestMethod]
+        public void From_NullCondition_PreservesIndexAndUsesEmptyFields()
+        {
+            SearchConditionSnapshot snapshot = SearchConditionSnapshot.From(2, null);
+
+            Assert.AreEqual(2, snapshot.ConditionIndex);
+            Assert.AreEqual(3, snapshot.DisplayIndex);
+            Assert.AreEqual(string.Empty, snapshot.CategoryInternal);
+            Assert.AreEqual(string.Empty, snapshot.CategoryDisplay);
+            Assert.AreEqual(string.Empty, snapshot.PropertyInternal);
+            Assert.AreEqual(string.Empty, snapshot.PropertyDisplay);
+            Assert.AreEqual(string.Empty, snapshot.Test);
+            Assert.AreEqual(string.Empty, snapshot.Value);
+        }
     }
 }

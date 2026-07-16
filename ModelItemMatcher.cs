@@ -137,6 +137,9 @@ namespace JiePinPai.Navisworks
             var needsDiscovery = new HashSet<string>();
             foreach (var c in conditions)
             {
+                if (c == null)
+                    continue;
+
                 bool hasCategory = !string.IsNullOrEmpty(c.CategoryDisplay)
                                 || !string.IsNullOrEmpty(c.CategoryInternal);
                 if (!hasCategory && !string.IsNullOrEmpty(c.PropertyDisplay))
