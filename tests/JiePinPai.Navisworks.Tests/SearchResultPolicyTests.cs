@@ -7,7 +7,7 @@ namespace JiePinPai.Navisworks.Tests
     [TestClass]
     public class SearchResultPolicyTests
     {
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(false, 0, SearchResultStatus.ConditionInvalid)]
         [DataRow(true, 0, SearchResultStatus.NotFound)]
         [DataRow(true, 1, SearchResultStatus.Found)]
@@ -45,7 +45,7 @@ namespace JiePinPai.Navisworks.Tests
             }));
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(SearchResultStatus.NotFound, SearchResultFilter.Problems, true)]
         [DataRow(SearchResultStatus.Duplicate, SearchResultFilter.Problems, true)]
         [DataRow(SearchResultStatus.ConditionInvalid, SearchResultFilter.Problems, true)]
@@ -60,7 +60,7 @@ namespace JiePinPai.Navisworks.Tests
             Assert.AreEqual(expected, SearchResultPolicy.MatchesFilter(status, filter));
         }
 
-        [DataTestMethod]
+        [TestMethod]
         [DataRow(SearchResultStatus.Found, "已找到")]
         [DataRow(SearchResultStatus.NotFound, "未找到")]
         [DataRow(SearchResultStatus.Duplicate, "重复")]
