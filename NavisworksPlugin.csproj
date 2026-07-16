@@ -16,6 +16,11 @@
     <Deterministic>true</Deterministic>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <NavisworksInstallDir Condition="'$(NavisworksInstallDir)' == '' and '$(NAVISWORKS_2023_PATH)' != ''">$(NAVISWORKS_2023_PATH)</NavisworksInstallDir>
+    <NavisworksInstallDir Condition="'$(NavisworksInstallDir)' == ''">$(ProgramFiles)\Autodesk\Navisworks Manage 2023</NavisworksInstallDir>
+  </PropertyGroup>
+
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>none</DebugType>
     <Optimize>true</Optimize>
@@ -34,14 +39,14 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
 
-  <!-- Navisworks Manage 2023 API 引用（F 盘安装路径） -->
+  <!-- Navisworks Manage 2023 API references. The install directory is configurable. -->
   <ItemGroup>
     <Reference Include="Autodesk.Navisworks.Api">
-      <HintPath>F:\Navisworks\Navisworks Manage 2023\Autodesk.Navisworks.Api.dll</HintPath>
+      <HintPath>$(NavisworksInstallDir)\Autodesk.Navisworks.Api.dll</HintPath>
       <Private>False</Private>
     </Reference>
     <Reference Include="navisworks.gui.roamer">
-      <HintPath>F:\Navisworks\Navisworks Manage 2023\navisworks.gui.roamer.dll</HintPath>
+      <HintPath>$(NavisworksInstallDir)\navisworks.gui.roamer.dll</HintPath>
       <Private>False</Private>
     </Reference>
   </ItemGroup>

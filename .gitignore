@@ -1,0 +1,12 @@
+# Local analysis and task artifacts
+.codegraph/
+.superpowers/
+.vs/
+
+# Build outputs
+**/bin/
+**/obj/
+
+# Visual Studio user state
+*.user
+*.suo

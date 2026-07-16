@@ -6,7 +6,7 @@ Navisworks Manage 2023 .NET Framework 4.8 插件，读取 XML 查找条件，通
 
 | 项 | 值 |
 |---|-----|
-| Navisworks | Manage 2023 (`F:\Navisworks\Navisworks Manage 2023\`) |
+| Navisworks | Manage 2023（`NAVISWORKS_2023_PATH`，默认 `%ProgramFiles%\Autodesk\Navisworks Manage 2023`） |
 | .NET | Framework 4.8, x64 |
 | 语言 | C# 7.3 (WinForms) |
 | 构建 | `dotnet build` (MSBuild 17.14) |
@@ -14,18 +14,16 @@ Navisworks Manage 2023 .NET Framework 4.8 插件，读取 XML 查找条件，通
 ## 构建
 
 ```powershell
-$env:PATH = "C:\Users\BOY\AppData\Local\Microsoft\dotnet;" + $env:PATH
-dotnet build NavisworksPlugin.csproj -c Release
+./build_2023.bat
 ```
 
 ## 部署
 
 ```powershell
-Copy-Item bin\Release\傑出品NavisworksPlugin.dll `
-  "F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin\" -Force
+./install_2023.bat
 ```
 
-重启 Navisworks 生效。
+也可将 `NavisworksInstallDir` 作为 MSBuild 属性传入；其优先级高于 `NAVISWORKS_2023_PATH`。PowerShell 安装入口为 `scripts\install_2023.ps1`。安装目录由 `NAVISWORKS_2023_PATH` 指定，未设置时使用标准 Program Files 安装目录；重启 Navisworks 后生效。
 
 ## 项目结构
 

@@ -5,20 +5,24 @@ navisworks-plugin/
 ├── PluginEntry.cs                  # 插件入口 (AddInPlugin) → 打开 SearchDialog
 ├── SearchDialog.cs                 # 主对话框: 4 标签页 + 工具栏 + DataGridView + 搜索执行
 ├── SearchCondition.cs              # 搜索条件 POCO
+├── SearchConditionSnapshot.cs      # 条件快照，用于结果失效判定
+├── SearchConditionValidator.cs     # 条件有效性校验
 ├── SearchResult.cs                 # 搜索结果 POCO
+├── SearchResultPolicy.cs           # 四态唯一性结果策略
+├── SearchResultStatus.cs           # 已找到、未找到、重复、条件异常状态
 ├── XmlSearchParser.cs              # 解析 Navisworks exchange XML → List<SearchCondition>
 ├── ModelItemMatcher.cs             # Navisworks 原生 Search.FindAll() API 封装
 ├── SelectionService.cs             # 设置 doc.CurrentSelection
-├── HideService.cs                  # Hide Unselected (LcOwDocument COM)
-├── HideServiceFixed.cs             # Hide Unselected 修复版
+├── HideServiceFixed.cs             # Hide Unselected 服务
 ├── LogService.cs                   # UTF-8 查找日志
 ├── DiagnosticLogSession.cs         # 诊断日志会话管理
 ├── DiagnosticLogExtensions.cs      # 诊断日志扩展方法
 ├── Properties/AssemblyInfo.cs      # 程序集元数据
-├── 傑出品NavisworksPlugin.plugin   # XML 清单 (插件注册 + 自定义选项卡)
+├── manifests/傑出品NavisworksPlugin.plugin # XML 清单 (插件注册 + 自定义选项卡)
 ├── NavisworksPlugin.csproj         # .NET Framework 4.8 x64 项目文件
 ├── build_2023.bat                  # MSBuild 编译脚本
-├── install_2023.bat                # 部署脚本 (F:\Navisworks\...\Plugins)
+├── install_2023.bat                # 部署脚本入口
+├── scripts/install_2023.ps1        # PowerShell 部署脚本
 ├── install_dotnet48_sdk.bat        # 环境准备
 ├── install_vs_buildtools.bat       # VS Build Tools 安装指引
 ├── test_search.xml                 # 测试用搜索条件 XML

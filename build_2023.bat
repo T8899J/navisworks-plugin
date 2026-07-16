@@ -8,8 +8,12 @@ echo   Target: Navisworks Manage 2023
 echo ============================================
 echo.
 
-REM -- Step 1: Check Navisworks 2023 path --
-set NW_PATH=F:\Navisworks\Navisworks Manage 2023
+REM -- Step 1: Resolve Navisworks 2023 path --
+if defined NAVISWORKS_2023_PATH (
+    set "NW_PATH=%NAVISWORKS_2023_PATH%"
+) else (
+    set "NW_PATH=%ProgramFiles%\Autodesk\Navisworks Manage 2023"
+)
 
 if not exist "%NW_PATH%" (
     echo [ERROR] Navisworks Manage 2023 not found at: %NW_PATH%
@@ -35,14 +39,7 @@ if exist %VSWHERE% (
     )
 )
 
-REM Method 2: D:\Apps custom path
-if not defined MSBUILD (
-    if exist "D:\Apps\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" (
-        set "MSBUILD=D:\Apps\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
-    )
-)
-
-REM Method 3: Standard path
+REM Method 2: Standard path
 if not defined MSBUILD (
     if exist "%ProgramFiles%\MSBuild\Current\Bin\MSBuild.exe" (
         set "MSBUILD=%ProgramFiles%\MSBuild\Current\Bin\MSBuild.exe"
@@ -61,7 +58,7 @@ echo.
 echo [RESTORE] Restoring NuGet packages ...
 
 cd /d "%~dp0"
-"!MSBUILD!" NavisworksPlugin.csproj /t:Restore /p:Configuration=Release /v:m
+"!MSBUILD!" NavisworksPlugin.csproj /t:Restore /p:Configuration=Release /p:NavisworksInstallDir="!NW_PATH!" /v:m
 
 if errorlevel 1 (
     echo.
@@ -72,7 +69,7 @@ REM -- Step 5: Build --
 echo.
 echo [BUILD] Compiling ...
 
-"!MSBUILD!" NavisworksPlugin.csproj /p:Configuration=Release /t:Rebuild /v:m
+"!MSBUILD!" NavisworksPlugin.csproj /p:Configuration=Release /p:NavisworksInstallDir="!NW_PATH!" /t:Rebuild /v:m
 
 if errorlevel 1 (
     echo.
@@ -85,7 +82,7 @@ echo.
 echo ============================================
 echo   BUILD SUCCESSFUL!
 echo ============================================
-echo   Output: %~dp0bin\Release\JiePinPaiNavisworksPlugin.dll
+echo   Output: %~dp0bin\Release\傑出品NavisworksPlugin.dll
 echo.
 echo   Next: run install_2023.bat
 echo ============================================

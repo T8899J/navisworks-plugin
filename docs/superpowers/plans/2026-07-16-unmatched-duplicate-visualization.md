@@ -1849,11 +1849,11 @@ Expected: pre-existing user changes remain intact; `.codegraph/`、`.superpowers
 - [ ] **Step 6: 在 Navisworks 关闭时安装 Release DLL**
 
 ```powershell
-$env:NAVISWORKS_2023_PATH = 'F:\Navisworks\Navisworks Manage 2023'
+$env:NAVISWORKS_2023_PATH = '<Navisworks Manage 2023 installation directory>'
 .\scripts\install_2023.ps1
 ```
 
-Expected: installer reports the destination under `F:\Navisworks\Navisworks Manage 2023\Plugins\傑出品NavisworksPlugin` and copies both DLL and manifest.
+Expected: installer uses `NAVISWORKS_2023_PATH` when set, otherwise the standard Program Files installation directory; it reports `<NavisworksInstallDir>\Plugins\傑出品NavisworksPlugin` and copies both DLL and manifest.
 
 - [ ] **Step 7: 执行 Navisworks 手工验收矩阵**
 
