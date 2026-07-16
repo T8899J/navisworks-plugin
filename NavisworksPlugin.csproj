@@ -71,6 +71,7 @@
     <Compile Include="SearchResultPolicy.cs" />
     <Compile Include="SearchCondition.cs" />
     <Compile Include="SearchConditionSnapshot.cs" />
+    <Compile Include="SearchConditionValidator.cs" />
     <Compile Include="SearchResult.cs" />
     <Compile Include="XmlSearchParser.cs" />
     <Compile Include="ModelItemMatcher.cs" />

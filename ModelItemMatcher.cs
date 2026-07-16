@@ -69,12 +69,24 @@ namespace JiePinPai.Navisworks
             // ── 阶段 1：搜索 ──
             var results = new List<SearchResult>(conditions.Count);
 
-            foreach (var cond in conditions)
+            for (int conditionIndex = 0; conditionIndex < conditions.Count; conditionIndex++)
             {
-                var navisCond = BuildNavisCondition(cond, categoryCache);
-                if (navisCond == null)
+                SearchCondition condition = conditions[conditionIndex];
+                SearchConditionSnapshot snapshot = SearchConditionSnapshot.From(
+                    conditionIndex,
+                    condition);
+
+                if (!TryBuildNavisCondition(
+                        condition,
+                        categoryCache,
+                        out NavisCondition navisCondition,
+                        out string validationError))
                 {
-                    results.Add(MakeEmptyResult(results.Count, cond));
+                    results.Add(CreateResult(
+                        snapshot,
+                        conditionExecuted: false,
+                        matchedItems: new List<ModelItem>(),
+                        invalidReason: validationError));
                     continue;
                 }
 
@@ -85,16 +97,18 @@ namespace JiePinPai.Navisworks
                     else
                         search.Selection.SelectAll();
 
-                    search.SearchConditions.Add(navisCond);
+                    search.SearchConditions.Add(navisCondition);
                     ModelItemCollection found = search.FindAll(doc, false);
-
-                    var matchedItems = found.Cast<ModelItem>().ToList();
-                    results.Add(new SearchResult
-                    {
-                        Condition = SearchConditionSnapshot.From(results.Count, cond),
-                        MatchCount = matchedItems.Count,
-                        MatchedItems = matchedItems,
-                    });
+                    var seenItems = new HashSet<ModelItem>();
+                    List<ModelItem> matchedItems = found
+                        .Cast<ModelItem>()
+                        .Where(item => item != null && seenItems.Add(item))
+                        .ToList();
+                    results.Add(CreateResult(
+                        snapshot,
+                        conditionExecuted: true,
+                        matchedItems: matchedItems,
+                        invalidReason: string.Empty));
                 }
             }
 
@@ -170,62 +184,96 @@ namespace JiePinPai.Navisworks
         ///   - test="contains" → DisplayStringContains + IgnoreStringValueCase
         ///   - test="equals"   → EqualValue(VariantData) + IgnoreStringValueCase
         /// </summary>
-        private static NavisCondition BuildNavisCondition(
-            SearchCondition cond,
-            Dictionary<string, string> categoryCache)
+        private static bool TryBuildNavisCondition(
+            SearchCondition condition,
+            Dictionary<string, string> categoryCache,
+            out NavisCondition navisCondition,
+            out string errorMessage)
         {
-            bool hasCategory = !string.IsNullOrEmpty(cond.CategoryDisplay)
-                            || !string.IsNullOrEmpty(cond.CategoryInternal);
+            navisCondition = null;
+            if (!SearchConditionValidator.TryValidate(condition, out errorMessage))
+                return false;
 
-            string propName = cond.PropertyDisplay ?? cond.PropertyInternal;
-            if (string.IsNullOrEmpty(propName))
-                return null;
+            string propertyName = !string.IsNullOrWhiteSpace(condition.PropertyDisplay)
+                ? condition.PropertyDisplay
+                : condition.PropertyInternal;
+            string categoryName = !string.IsNullOrWhiteSpace(condition.CategoryDisplay)
+                ? condition.CategoryDisplay
+                : condition.CategoryInternal;
 
-            // ── 确定分类名 ──
-            string catName;
-            if (hasCategory)
+            if (string.IsNullOrWhiteSpace(categoryName))
             {
-                catName = cond.CategoryDisplay ?? cond.CategoryInternal;
-            }
-            else if (cond.PropertyDisplay != null
-                     && categoryCache.TryGetValue(cond.PropertyDisplay, out catName))
-            {
-                // 从模型采样发现的分类 ✓
-            }
-            else
-            {
-                // 无法确定分类，搜索无法执行
-                return null;
+                string discoveryKey = condition.PropertyDisplay;
+                if (string.IsNullOrWhiteSpace(discoveryKey)
+                    || !categoryCache.TryGetValue(discoveryKey, out categoryName))
+                {
+                    errorMessage = $"无法识别属性“{propertyName}”所属分类。";
+                    return false;
+                }
             }
 
-            // ── 构建属性选择条件 ──
-            var propCond = NavisCondition.HasPropertyByDisplayName(catName, propName);
-
-            // ── 添加值匹配方式（忽略大小写）──
-            bool isContains = string.Equals(cond.Test, "contains",
-                StringComparison.OrdinalIgnoreCase);
-
-            return isContains
-                ? propCond.DisplayStringContains(cond.Value)
-                    .IgnoreStringValueCase()
-                : propCond.EqualValue(VariantData.FromDisplayString(cond.Value))
-                    .IgnoreStringValueCase();
+            try
+            {
+                NavisCondition propertyCondition =
+                    NavisCondition.HasPropertyByDisplayName(categoryName, propertyName);
+                bool contains = string.Equals(
+                    condition.Test,
+                    "contains",
+                    StringComparison.OrdinalIgnoreCase);
+                navisCondition = contains
+                    ? propertyCondition.DisplayStringContains(condition.Value)
+                        .IgnoreStringValueCase()
+                    : propertyCondition.EqualValue(
+                        VariantData.FromDisplayString(condition.Value))
+                        .IgnoreStringValueCase();
+                errorMessage = string.Empty;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                navisCondition = null;
+                errorMessage = "条件构造失败：" + ex.Message;
+                return false;
+            }
         }
 
-        /// <summary>
-        /// 生成一个空匹配结果。
-        /// </summary>
-        private static SearchResult MakeEmptyResult(
-            int conditionIndex,
-            SearchCondition condition)
+        private static SearchResult CreateResult(
+            SearchConditionSnapshot snapshot,
+            bool conditionExecuted,
+            List<ModelItem> matchedItems,
+            string invalidReason)
         {
+            int matchCount = matchedItems?.Count ?? 0;
+            SearchResultStatus status = SearchResultPolicy.Classify(
+                conditionExecuted,
+                matchCount);
+
+            string message;
+            switch (status)
+            {
+                case SearchResultStatus.Found:
+                    message = "当前选定范围内唯一匹配 1 个对象。";
+                    break;
+                case SearchResultStatus.NotFound:
+                    message = "当前选定范围内未找到对象。";
+                    break;
+                case SearchResultStatus.Duplicate:
+                    message = $"当前选定范围内匹配 {matchCount} 个对象，要求唯一。";
+                    break;
+                case SearchResultStatus.ConditionInvalid:
+                    message = invalidReason;
+                    break;
+                default:
+                    throw new InvalidOperationException("未知搜索结果状态。");
+            }
+
             return new SearchResult
             {
-                Condition = SearchConditionSnapshot.From(conditionIndex, condition),
-                Status = SearchResultStatus.ConditionInvalid,
-                StatusMessage = "条件无法构造。",
-                MatchCount = 0,
-                MatchedItems = new List<ModelItem>(),
+                Condition = snapshot,
+                Status = status,
+                StatusMessage = message,
+                MatchCount = matchCount,
+                MatchedItems = matchedItems ?? new List<ModelItem>(),
             };
         }
 

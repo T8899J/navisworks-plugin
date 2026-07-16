@@ -16,5 +16,6 @@
     <Compile Include="..\..\SearchResultPolicy.cs" Link="Production\SearchResultPolicy.cs" />
     <Compile Include="..\..\SearchCondition.cs" Link="Production\SearchCondition.cs" />
     <Compile Include="..\..\SearchConditionSnapshot.cs" Link="Production\SearchConditionSnapshot.cs" />
+    <Compile Include="..\..\SearchConditionValidator.cs" Link="Production\SearchConditionValidator.cs" />
   </ItemGroup>
 </Project>
