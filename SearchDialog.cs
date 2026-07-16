@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Autodesk.Navisworks.Api;
+using Color = System.Drawing.Color;
 
 namespace JiePinPai.Navisworks
 {
@@ -34,7 +35,9 @@ namespace JiePinPai.Navisworks
 
         // ── 模块 4：结果（搜索后显示） ──
         private Label _lblResultSummary;
-        private ListBox _lstResultDetails;
+        private FlowLayoutPanel _resultFilterPanel;
+        private DataGridView _resultsGrid;
+        private SearchResultFilter _activeResultFilter = SearchResultFilter.All;
         private Button _btnSearch;
         private Button _btnExportResults;
         private Button _btnCreateSelectionSet;
@@ -550,46 +553,257 @@ namespace JiePinPai.Navisworks
         private void BuildResultsTab()
         {
             _tabResults.SuspendLayout();
+            int summaryHeight = CalculateContentHeight(this.Font, 2, 24);
+            int filterHeight = CalculateButtonHeight(this.Font) + ScaleLogical(12);
 
-            var lineH = MeasureTextHeight(this.Font);
-            // 摘要：3 行文字 + 左右内边距(20) + 边框(4)
-            var summaryH = lineH * 3 + ScaleLogical(24);
-            // 详情标题：1 行文字 + 上内边距
-            var detailH = lineH + ScaleLogical(6);
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(ScaleLogical(4)),
+                BackColor = _tabResults.BackColor,
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, summaryHeight));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, filterHeight));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             _lblResultSummary = new Label
             {
-                Dock = DockStyle.Top,
-                Height = summaryH,
-                Padding = new Padding(ScaleLogical(10)),
+                Dock = DockStyle.Fill,
+                Padding = new Padding(ScaleLogical(12), ScaleLogical(8), ScaleLogical(12), 0),
                 BackColor = System.Drawing.Color.FromArgb(239, 246, 255),
                 ForeColor = System.Drawing.Color.FromArgb(30, 64, 175),
                 BorderStyle = BorderStyle.FixedSingle,
+                Text = "尚未执行搜索。",
             };
 
-            var lblDetails = new Label
-            {
-                Text = "详细匹配结果：",
-                Dock = DockStyle.Top,
-                Height = detailH,
-                Padding = new Padding(ScaleLogical(10), ScaleLogical(4), 0, 0),
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-            };
-
-            _lstResultDetails = new ListBox
+            _resultFilterPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                Font = new Font("Consolas", 9F),
-                IntegralHeight = false,
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(30, 41, 59),
-                BorderStyle = BorderStyle.FixedSingle,
+                FlowDirection = FlowDirection.LeftToRight,
+                WrapContents = false,
+                Padding = new Padding(0, ScaleLogical(6), 0, 0),
+                BackColor = _tabResults.BackColor,
             };
+            AddResultFilterButton(SearchResultFilter.All, "全部");
+            AddResultFilterButton(SearchResultFilter.Problems, "问题项");
+            AddResultFilterButton(SearchResultFilter.Found, "已找到");
+            AddResultFilterButton(SearchResultFilter.NotFound, "未找到");
+            AddResultFilterButton(SearchResultFilter.Duplicate, "重复");
+            AddResultFilterButton(SearchResultFilter.ConditionInvalid, "条件异常");
 
-            _tabResults.Controls.Add(_lstResultDetails);
-            _tabResults.Controls.Add(lblDetails);
-            _tabResults.Controls.Add(_lblResultSummary);
-            _tabResults.ResumeLayout();
+            _resultsGrid = CreateResultsGrid();
+            SetActiveResultFilter(SearchResultFilter.All);
+
+            root.Controls.Add(_lblResultSummary, 0, 0);
+            root.Controls.Add(_resultFilterPanel, 0, 1);
+            root.Controls.Add(_resultsGrid, 0, 2);
+            _tabResults.Controls.Add(root);
+            _tabResults.ResumeLayout(true);
+        }
+
+        private void AddResultFilterButton(SearchResultFilter filter, string text)
+        {
+            var button = new Button
+            {
+                Text = text,
+                Tag = filter,
+                AutoSize = true,
+                MinimumSize = new Size(
+                    ScaleLogical(74),
+                    CalculateButtonHeight(this.Font)),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(51, 65, 85),
+                Font = this.Font,
+                Margin = new Padding(0, 0, ScaleLogical(6), 0),
+            };
+            button.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
+            button.Click += ResultFilterButton_Click;
+            _resultFilterPanel.Controls.Add(button);
+        }
+
+        private DataGridView CreateResultsGrid()
+        {
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                AllowUserToResizeRows = false,
+                ReadOnly = true,
+                MultiSelect = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersVisible = false,
+                AutoGenerateColumns = false,
+                BackgroundColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                GridColor = Color.FromArgb(226, 232, 240),
+                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
+            };
+            grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(241, 245, 249);
+            grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(51, 65, 85);
+            grid.ColumnHeadersDefaultCellStyle.Font = new Font(grid.Font, FontStyle.Bold);
+            grid.EnableHeadersVisualStyles = false;
+            grid.RowTemplate.Height = CalculateContentHeight(grid.Font, 1, 12);
+            ApplyGridHeaderLayout(grid);
+
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "ConditionIndex",
+                HeaderText = "序号",
+                Width = ScaleLogical(58),
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Status",
+                HeaderText = "状态",
+                Width = ScaleLogical(88),
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Category",
+                HeaderText = "分类",
+                Width = ScaleLogical(118),
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Property",
+                HeaderText = "属性名",
+                Width = ScaleLogical(132),
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Test",
+                HeaderText = "匹配方式",
+                Width = ScaleLogical(86),
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Value",
+                HeaderText = "查询值",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                FillWeight = 32F,
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "MatchCount",
+                HeaderText = "匹配数",
+                Width = ScaleLogical(70),
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Message",
+                HeaderText = "说明",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+                FillWeight = 48F,
+            });
+            return grid;
+        }
+
+        private void ResultFilterButton_Click(object sender, EventArgs e)
+        {
+            var button = sender as Button;
+            if (button?.Tag is SearchResultFilter filter)
+                SetActiveResultFilter(filter);
+        }
+
+        private void SetActiveResultFilter(SearchResultFilter filter)
+        {
+            _activeResultFilter = filter;
+            foreach (Control control in _resultFilterPanel.Controls)
+            {
+                var button = control as Button;
+                if (button == null)
+                    continue;
+
+                bool active = button.Tag is SearchResultFilter value && value == filter;
+                button.BackColor = active ? Color.FromArgb(37, 99, 235) : Color.White;
+                button.ForeColor = active ? Color.White : Color.FromArgb(51, 65, 85);
+            }
+            RefreshResultsGrid(_lastResults ?? Enumerable.Empty<SearchResult>());
+        }
+
+        private void RefreshResultsGrid(IEnumerable<SearchResult> results)
+        {
+            _resultsGrid.Rows.Clear();
+            foreach (SearchResult result in results)
+            {
+                if (!SearchResultPolicy.MatchesFilter(result.Status, _activeResultFilter))
+                    continue;
+
+                int rowIndex = _resultsGrid.Rows.Add(
+                    result.Condition.DisplayIndex,
+                    SearchResultPolicy.GetDisplayName(result.Status),
+                    result.Condition.GetCategoryName(),
+                    result.Condition.GetPropertyName(),
+                    result.Condition.Test,
+                    result.Condition.Value,
+                    result.MatchCount,
+                    result.StatusMessage);
+                DataGridViewRow row = _resultsGrid.Rows[rowIndex];
+                row.Tag = result;
+                ApplyResultRowStyle(row, result.Status);
+                foreach (DataGridViewCell cell in row.Cells)
+                    cell.ToolTipText = Convert.ToString(cell.Value);
+            }
+        }
+
+        private static void ApplyResultRowStyle(
+            DataGridViewRow row,
+            SearchResultStatus status)
+        {
+            switch (status)
+            {
+                case SearchResultStatus.Found:
+                    row.DefaultCellStyle.BackColor = Color.White;
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(22, 101, 52);
+                    break;
+                case SearchResultStatus.NotFound:
+                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 241, 242);
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(153, 27, 27);
+                    break;
+                case SearchResultStatus.Duplicate:
+                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 247, 237);
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(154, 52, 18);
+                    break;
+                case SearchResultStatus.ConditionInvalid:
+                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 251, 235);
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(133, 77, 14);
+                    break;
+            }
+            row.DefaultCellStyle.SelectionBackColor = Color.FromArgb(219, 234, 254);
+            row.DefaultCellStyle.SelectionForeColor = Color.FromArgb(15, 23, 42);
+        }
+
+        private void UpdateResultFilterCaptions(IReadOnlyCollection<SearchResult> results)
+        {
+            foreach (Control control in _resultFilterPanel.Controls)
+            {
+                var button = control as Button;
+                if (!(button?.Tag is SearchResultFilter filter))
+                    continue;
+
+                int count = results.Count(r =>
+                    SearchResultPolicy.MatchesFilter(r.Status, filter));
+                button.Text = $"{GetFilterTitle(filter)} {count}";
+            }
+        }
+
+        private static string GetFilterTitle(SearchResultFilter filter)
+        {
+            switch (filter)
+            {
+                case SearchResultFilter.All: return "全部";
+                case SearchResultFilter.Problems: return "问题项";
+                case SearchResultFilter.Found: return "已找到";
+                case SearchResultFilter.NotFound: return "未找到";
+                case SearchResultFilter.Duplicate: return "重复";
+                case SearchResultFilter.ConditionInvalid: return "条件异常";
+                default: throw new ArgumentOutOfRangeException(nameof(filter));
+            }
         }
 
         #endregion
@@ -1235,10 +1449,7 @@ namespace JiePinPai.Navisworks
                 List<ModelItem> matchedItemsInScope =
                     MergeUniqueItems(results.SelectMany(r => r.MatchedItems));
                 totalMatched = matchedItemsInScope.Count;
-                int matchedConds = results.Count(r => r.MatchCount > 0);
-                int unmatchedConds = results.Count - matchedConds;
-
-                ShowResults(results, totalMatched, matchedConds, unmatchedConds);
+                ShowResults(results, totalMatched, modelPrefix);
 
                 ProtectedKeepResult protectedKeepResult;
                 ModelItem protectedNode = scopeRoots.Find(
@@ -1409,21 +1620,22 @@ namespace JiePinPai.Navisworks
         private void ShowResults(
             List<SearchResult> results,
             int totalMatched,
-            int matchedConds,
-            int unmatchedConds)
+            string scopeLabel)
         {
-            _lblResultSummary.Text =
-                $"条件总数：{results.Count}\n" +
-                $"找到：{matchedConds}　　未找到：{unmatchedConds}\n" +
-                $"总匹配对象：{totalMatched} 个";
+            int found = results.Count(r => r.Status == SearchResultStatus.Found);
+            int notFound = results.Count(r => r.Status == SearchResultStatus.NotFound);
+            int duplicate = results.Count(r => r.Status == SearchResultStatus.Duplicate);
+            int invalid = results.Count(r => r.Status == SearchResultStatus.ConditionInvalid);
 
-            _lstResultDetails.Items.Clear();
-            foreach (var r in results)
-            {
-                string icon = r.MatchCount > 0 ? "[✓]" : "[✗]";
-                _lstResultDetails.Items.Add(
-                    $"{icon} {r.QueryValue} → 匹配 {r.MatchCount} 个对象");
-            }
+            _lastResults = results;
+            _lblResultSummary.Text =
+                $"范围：{scopeLabel}　　条件总数：{results.Count}　　" +
+                $"已找到：{found}　未找到：{notFound}　重复：{duplicate}　条件异常：{invalid}\n" +
+                $"去重后的总匹配对象：{totalMatched} 个";
+            UpdateResultFilterCaptions(results);
+            SetActiveResultFilter(results.Any(r => r.IsProblem)
+                ? SearchResultFilter.Problems
+                : SearchResultFilter.All);
         }
 
         #endregion
