@@ -1858,7 +1858,9 @@ namespace JiePinPai.Navisworks
             return string.Join(
                 "; ",
                 (items ?? Enumerable.Empty<ModelItem>()).Select(item =>
-                    $"{item.DisplayName ?? "（无名称）"} [{item.InstanceGuid}]"));
+                    item == null
+                        ? "（空对象）"
+                        : $"{item.DisplayName ?? "（无名称）"} [{item.InstanceGuid}]"));
         }
 
         private void BtnCreateSelectionSet_Click(object sender, EventArgs e)
