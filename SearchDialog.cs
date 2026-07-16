@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Autodesk.Navisworks.Api;
+using CheckBoxState = System.Windows.Forms.VisualStyles.CheckBoxState;
 using Color = System.Drawing.Color;
 
 namespace JiePinPai.Navisworks
@@ -670,6 +671,7 @@ namespace JiePinPai.Navisworks
             _resultsGrid = CreateResultsGrid();
             _resultsGrid.CellDoubleClick += ResultsGrid_CellDoubleClick;
             _resultsGrid.CellValueChanged += ResultsGrid_CellValueChanged;
+            _resultsGrid.CellPainting += ResultsGrid_CellPainting;
             _resultsGrid.CurrentCellDirtyStateChanged +=
                 ResultsGrid_CurrentCellDirtyStateChanged;
             _resultsGrid.ColumnHeaderMouseClick +=
@@ -725,6 +727,8 @@ namespace JiePinPai.Navisworks
             };
             grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(241, 245, 249);
             grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(51, 65, 85);
+            grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(241, 245, 249);
+            grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Color.FromArgb(51, 65, 85);
             grid.ColumnHeadersDefaultCellStyle.Font = new Font(grid.Font, FontStyle.Bold);
             grid.EnableHeadersVisualStyles = false;
             grid.RowTemplate.Height = CalculateContentHeight(grid.Font, 1, 12);
@@ -733,12 +737,18 @@ namespace JiePinPai.Navisworks
             var exportColumn = new DataGridViewCheckBoxColumn
             {
                 Name = "ExportSelected",
-                HeaderText = "勾选",
-                Width = ScaleLogical(58),
+                HeaderText = "选择",
+                Width = ScaleLogical(42),
+                MinimumWidth = ScaleLogical(42),
                 ThreeState = false,
                 SortMode = DataGridViewColumnSortMode.NotSortable,
                 ReadOnly = false,
+                Resizable = DataGridViewTriState.False,
+                FlatStyle = FlatStyle.Standard,
             };
+            exportColumn.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            exportColumn.DefaultCellStyle.Padding = new Padding(0);
+            exportColumn.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
             exportColumn.HeaderCell.ToolTipText = "单击表头可勾选或取消当前筛选下的全部结果";
             grid.Columns.Add(exportColumn);
             grid.Columns.Add(new DataGridViewTextBoxColumn
@@ -967,6 +977,47 @@ namespace JiePinPai.Navisworks
             RefreshResultsGrid(_lastResults ?? Enumerable.Empty<SearchResult>());
         }
 
+        private void ResultsGrid_CellPainting(
+            object sender,
+            DataGridViewCellPaintingEventArgs e)
+        {
+            if (e.RowIndex != -1 || e.ColumnIndex != RESULT_COL_EXPORT)
+                return;
+
+            e.Paint(
+                e.CellBounds,
+                DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
+
+            CheckBoxState state = GetExportHeaderCheckBoxState();
+            Size glyphSize = CheckBoxRenderer.GetGlyphSize(e.Graphics, state);
+            var glyphBounds = new Rectangle(
+                e.CellBounds.Left + ((e.CellBounds.Width - glyphSize.Width) / 2),
+                e.CellBounds.Top + ((e.CellBounds.Height - glyphSize.Height) / 2),
+                glyphSize.Width,
+                glyphSize.Height);
+
+            CheckBoxRenderer.DrawCheckBox(e.Graphics, glyphBounds.Location, state);
+
+            e.Handled = true;
+        }
+
+        private CheckBoxState GetExportHeaderCheckBoxState()
+        {
+            List<int> visibleIds = GetCurrentFilteredResults()
+                .Select(result => result.Condition.DisplayIndex)
+                .ToList();
+            if (visibleIds.Count == 0)
+                return CheckBoxState.UncheckedDisabled;
+
+            int selectedCount = visibleIds.Count(
+                id => _checkedExportResultIndices.Contains(id));
+            if (selectedCount == 0)
+                return CheckBoxState.UncheckedNormal;
+            if (selectedCount == visibleIds.Count)
+                return CheckBoxState.CheckedNormal;
+            return CheckBoxState.MixedNormal;
+        }
+
         private List<SearchResult> GetCurrentFilteredResults()
         {
             return (_lastResults ?? new List<SearchResult>())
@@ -1013,6 +1064,12 @@ namespace JiePinPai.Navisworks
             }
             if (_btnExportResults != null)
                 _btnExportResults.Enabled = allIds.Count > 0;
+
+            if (_resultsGrid != null && _resultsGrid.Columns.Count > RESULT_COL_EXPORT)
+            {
+                _resultsGrid.InvalidateCell(
+                    _resultsGrid.Columns[RESULT_COL_EXPORT].HeaderCell);
+            }
         }
 
         private static void ApplyResultRowStyle(
