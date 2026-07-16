@@ -40,6 +40,14 @@ namespace JiePinPai.Navisworks.Tests
             }));
             Assert.IsFalse(SearchResultPolicy.CanHide(new[]
             {
+                SearchResultStatus.NotFound,
+            }));
+            Assert.IsFalse(SearchResultPolicy.CanHide(new[]
+            {
+                SearchResultStatus.ConditionInvalid,
+            }));
+            Assert.IsFalse(SearchResultPolicy.CanHide(new[]
+            {
                 SearchResultStatus.Found,
                 SearchResultStatus.Duplicate,
             }));
