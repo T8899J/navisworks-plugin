@@ -103,20 +103,10 @@ namespace JiePinPai.Navisworks
                     $"[计时] 获取反选集合({invertedSelection.Count} 项)耗时 " +
                     $"{sw.ElapsedMilliseconds} ms");
 
-                // 先在托管 List 中筛出待隐藏项，再一次性 AddRange 进内核集合，
-                // 避免逐项 Add 反复跨托管/内核边界（原逐项 Add 是主要耗时点）。
-                sw.Restart();
-                var toHideList = new List<ModelItem>(invertedSelection.Count);
-                foreach (ModelItem item in invertedSelection)
-                {
-                    if (!item.IsHidden)
-                        toHideList.Add(item);
-                }
-                var toHide = new ModelItemCollection();
-                toHide.AddRange(toHideList);
-                diagnosticLog?.LogDecision(
-                    $"[计时] 遍历 IsHidden 构建 toHide({toHide.Count} 项)耗时 " +
-                    $"{sw.ElapsedMilliseconds} ms");
+                // 直接以反选集合作为待隐藏集：SetSelectionHidden 把指定项的
+                // IsHidden 设为 true，对已隐藏项重复设置是幂等无害的，因此无需
+                // 逐项读 IsHidden 预筛（该预筛是主要耗时点，约 465ms）。
+                ModelItemCollection toHide = invertedSelection;
 
                 diagnosticLog?.LogHideCandidateCounts(
                     invertedSelection.Count,
