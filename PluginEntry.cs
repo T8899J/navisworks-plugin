@@ -20,6 +20,10 @@ namespace JiePinPai.Navisworks
     [AddInPlugin(AddInLocation.AddIn)]
     public class PluginEntry : AddInPlugin
     {
+        // 唯一存活的无模式窗口。仅在 Navisworks UI 线程访问
+        // （清单 executeInMainThread="true"），故无需加锁；同时钉住引用防止被 GC。
+        private static SearchDialog _openDialog;
+
         public override int Execute(params string[] parameters)
         {
             try
@@ -28,20 +32,38 @@ namespace JiePinPai.Navisworks
                 if (doc == null)
                     return 1;
 
+                // 再次点击功能区按钮：已有窗口时激活它，不再开第二个。
+                if (_openDialog != null && !_openDialog.IsDisposed)
+                {
+                    if (ReferenceEquals(_openDialog.Document, doc))
+                    {
+                        RestoreAndActivate(_openDialog);
+                        return 0;
+                    }
+
+                    // 活动文档已换成另一个 Document 对象：关闭旧窗口，绑定新文档重开。
+                    _openDialog.Close();
+                }
+
                 IntPtr hwnd = Process.GetCurrentProcess().MainWindowHandle;
                 string initialXmlPath = ResolveInitialXmlPath(parameters);
-                using (var dialog = new SearchDialog(doc, initialXmlPath))
-                {
-                    if (hwnd != IntPtr.Zero)
-                        dialog.ShowDialog(new WindowWrapper(hwnd));
-                    else
-                        dialog.ShowDialog();
-                }
+
+                var dialog = new SearchDialog(doc, initialXmlPath, hwnd);
+                dialog.FormClosed += SearchDialog_FormClosed;
+                _openDialog = dialog;
+
+                // 无模式显示：窗口以 Navisworks 主窗口为宿主浮于其上，
+                // Execute 立即返回，用户可同时操作三维视图。
+                if (hwnd != IntPtr.Zero)
+                    dialog.Show(new WindowWrapper(hwnd));
+                else
+                    dialog.Show();
 
                 return 0;
             }
             catch (Exception ex)
             {
+                _openDialog = null;
                 MessageBox.Show(
                     "操作失败：\n" + ex.Message,
                     "傑出品 错误",
@@ -49,6 +71,21 @@ namespace JiePinPai.Navisworks
                     MessageBoxIcon.Error);
                 return -1;
             }
+        }
+
+        private static void SearchDialog_FormClosed(object sender, FormClosedEventArgs e)
+        {
+            if (sender is SearchDialog closed)
+                closed.FormClosed -= SearchDialog_FormClosed;
+            _openDialog = null;
+        }
+
+        private static void RestoreAndActivate(Form form)
+        {
+            if (form.WindowState == FormWindowState.Minimized)
+                form.WindowState = FormWindowState.Normal;
+            form.Activate();
+            form.BringToFront();
         }
 
         private static string ResolveInitialXmlPath(string[] parameters)

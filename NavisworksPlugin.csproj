@@ -50,6 +50,16 @@
       <HintPath>$(NavisworksInstallDir)\navisworks.gui.roamer.dll</HintPath>
       <Private>False</Private>
     </Reference>
+    <!-- COM 桥（相机聚焦到当前选择：ComApiBridge.State.ZoomInCurViewOnCurSel）。 -->
+    <Reference Include="Autodesk.Navisworks.ComApi">
+      <HintPath>$(NavisworksInstallDir)\Autodesk.Navisworks.ComApi.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="Autodesk.Navisworks.Interop.ComApi">
+      <HintPath>$(NavisworksInstallDir)\Autodesk.Navisworks.Interop.ComApi.dll</HintPath>
+      <Private>False</Private>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+    </Reference>
   </ItemGroup>
 
   <!-- .NET Framework 引用程序集（通过 NuGet 获取，无需本地安装 Developer Pack） -->
@@ -86,6 +96,7 @@
     <Compile Include="SelectionService.cs" />
     <Compile Include="SelectionEquivalencePolicy.cs" />
     <Compile Include="HideServiceFixed.cs" />
+    <Compile Include="ViewFocusService.cs" />
     <Compile Include="ProtectedKeepService.cs" />
     <Compile Include="DiagnosticLogSession.cs" />
     <Compile Include="DiagnosticLogExtensions.cs" />

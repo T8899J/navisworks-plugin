@@ -37,6 +37,7 @@ namespace JiePinPai.Navisworks
         // ── 模块 4：结果（搜索后显示） ──
         private Label _lblResultSummary;
         private Label _lblExportSelection;
+        private Button _btnRestoreSelection;
         private FlowLayoutPanel _resultFilterPanel;
         private DataGridView _resultsGrid;
         private SearchResultFilter _activeResultFilter = SearchResultFilter.All;
@@ -59,8 +60,13 @@ namespace JiePinPai.Navisworks
         // ── 数据 ──
         private readonly Document _doc;
         private readonly string _initialXmlPath;
+        private readonly IntPtr _ownerHandle;
         private List<SearchCondition> _conditions;
         private string _currentXmlPath;
+
+        // 无模式窗口：记住上次位置（跨重开），缓存搜索选中的全部对象以便还原。
+        private static Point? _lastLocation;
+        private List<ModelItem> _lastSearchSelection;
 
         // ── 搜索结果缓存 ──
         private List<SearchResult> _lastResults;
@@ -82,14 +88,24 @@ namespace JiePinPai.Navisworks
         private static readonly Regex ModelPrefixRegex =
             new Regex(@"^(TS-M[0-9A-Z]+)-", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public SearchDialog(Document doc, string initialXmlPath = null)
+        public SearchDialog(
+            Document doc,
+            string initialXmlPath = null,
+            IntPtr ownerHandle = default(IntPtr))
         {
             _doc = doc;
             _initialXmlPath = initialXmlPath;
+            _ownerHandle = ownerHandle;
             _conditions = new List<SearchCondition>();
             InitializeComponent();
             TryLoadInitialXml();
             RefreshConditionsGrid();
+        }
+
+        /// <summary>PluginEntry 用于判断再次点击时是否为同一文档。</summary>
+        internal Document Document
+        {
+            get { return _doc; }
         }
 
         #region 初始化 UI
@@ -99,7 +115,8 @@ namespace JiePinPai.Navisworks
             this.Text = "傑出品";
             this.Size = new Size(ScaleLogical(960), ScaleLogical(680));
             this.MinimumSize = new Size(ScaleLogical(760), ScaleLogical(540));
-            this.StartPosition = FormStartPosition.CenterParent;
+            // 无模式窗口：手动定位到 Navisworks 主窗口右上角（见 PositionForModeless）。
+            this.StartPosition = FormStartPosition.Manual;
             this.Font = new Font("Microsoft YaHei UI", 9F);
             this.BackColor = System.Drawing.Color.FromArgb(245, 247, 250);
             this.Icon = null;
@@ -260,6 +277,9 @@ namespace JiePinPai.Navisworks
                 UseVisualStyleBackColor = false,
                 DialogResult = DialogResult.Cancel,
             };
+            // 无模式窗口下 DialogResult/CancelButton 不会自动关窗，需显式关闭
+            // （Esc 经 CancelButton 也会触发此 Click）。
+            _btnClose.Click += (s, e) => this.Close();
 
             var bottomLayout = new TableLayoutPanel
             {
@@ -668,6 +688,26 @@ namespace JiePinPai.Navisworks
             };
             _resultFilterPanel.Controls.Add(_lblExportSelection);
 
+            // 查看重复对象后，一键把当前选择还原为搜索选中的全部对象。
+            _btnRestoreSelection = new Button
+            {
+                Text = "还原全部选择",
+                AutoSize = true,
+                MinimumSize = new Size(
+                    ScaleLogical(110),
+                    CalculateButtonHeight(this.Font)),
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.White,
+                ForeColor = Color.FromArgb(37, 99, 235),
+                Font = this.Font,
+                Margin = new Padding(ScaleLogical(12), 0, 0, 0),
+                Enabled = false,
+            };
+            _btnRestoreSelection.FlatAppearance.BorderColor =
+                Color.FromArgb(37, 99, 235);
+            _btnRestoreSelection.Click += BtnRestoreSelection_Click;
+            _resultFilterPanel.Controls.Add(_btnRestoreSelection);
+
             _resultsGrid = CreateResultsGrid();
             _resultsGrid.CellDoubleClick += ResultsGrid_CellDoubleClick;
             _resultsGrid.CellValueChanged += ResultsGrid_CellValueChanged;
@@ -821,57 +861,32 @@ namespace JiePinPai.Navisworks
 
             if (result.Status == SearchResultStatus.Duplicate)
             {
-                using (var selectionBeforeInspection = new ModelItemCollection(
-                    _doc.CurrentSelection.SelectedItems))
-                {
-                    Exception inspectionError = null;
-                    Exception restorationError = null;
-                    try
-                    {
-                        List<ModelItem> selected = SelectionService.SetSelection(
-                            _doc,
-                            result.MatchedItems);
-                        MessageBox.Show(
-                            this,
-                            $"已临时选中该重复结果对应的 {selected.Count} 个对象。\n\n" +
-                            $"关闭此提示后，将恢复定位前的 {selectionBeforeInspection.Count} 个对象。\n" +
-                            "之后可直接使用“隐藏未选中”，无需重新导入或重新搜索。",
-                            "傑出品·临时查看重复结果",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Information);
-                    }
-                    catch (Exception ex)
-                    {
-                        inspectionError = ex;
-                    }
-                    finally
-                    {
-                        try
-                        {
-                            _doc.CurrentSelection.CopyFrom(selectionBeforeInspection);
-                        }
-                        catch (Exception ex)
-                        {
-                            restorationError = ex;
-                        }
-                    }
+                if (!EnsureDocumentUsable())
+                    return;
 
-                    if (inspectionError != null || restorationError != null)
-                    {
-                        string details = inspectionError?.Message ?? string.Empty;
-                        if (restorationError != null)
-                        {
-                            if (!string.IsNullOrEmpty(details))
-                                details += "\n\n";
-                            details += "恢复原选择失败：" + restorationError.Message;
-                        }
-                        MessageBox.Show(
-                            this,
-                            "临时查看重复结果未完整完成：\n" + details,
-                            "傑出品·定位失败",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Error);
-                    }
+                try
+                {
+                    List<ModelItem> selected = SelectionService.SetSelection(
+                        _doc,
+                        result.MatchedItems);
+                    // 相机对准选中对象；COM 失败为非致命，选择仍保留。
+                    ViewFocusService.ZoomToCurrentSelection(_doc);
+                    int displayIndex = result.Condition != null
+                        ? result.Condition.DisplayIndex
+                        : 0;
+                    _lblResultSummary.Text =
+                        $"已定位并选中重复结果 #{displayIndex} 的 {selected.Count} 个对象，" +
+                        "可在视图中查看；查看完点『还原全部选择』恢复搜索选中的全部对象。";
+                }
+                catch (Exception ex)
+                {
+                    // 仅“设为选择”本身失败才提示；相机缩放失败已被静默处理。
+                    MessageBox.Show(
+                        this,
+                        "定位失败：\n" + ex.Message,
+                        "傑出品·定位重复结果",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error);
                 }
                 return;
             }
@@ -895,6 +910,46 @@ namespace JiePinPai.Navisworks
                 SetActiveResultFilter(filter);
         }
 
+        /// <summary>
+        /// 把当前选择还原为本次搜索选中的全部对象（命中 ∪ STR 保护），并对齐相机。
+        /// 供用户查看完个别重复对象后一键恢复。
+        /// </summary>
+        private void BtnRestoreSelection_Click(object sender, EventArgs e)
+        {
+            if (!EnsureDocumentUsable())
+                return;
+
+            if (_lastSearchSelection == null || _lastSearchSelection.Count == 0)
+            {
+                MessageBox.Show(
+                    this,
+                    "没有可还原的搜索选择，请先执行搜索。",
+                    "傑出品·还原选择",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            try
+            {
+                List<ModelItem> selected = SelectionService.SetSelection(
+                    _doc,
+                    _lastSearchSelection);
+                ViewFocusService.ZoomToCurrentSelection(_doc);
+                _lblResultSummary.Text =
+                    $"已还原搜索选中的全部对象：{selected.Count} 个。";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    "还原选择失败：\n" + ex.Message,
+                    "傑出品·还原选择",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
         private void SetActiveResultFilter(SearchResultFilter filter)
         {
             _activeResultFilter = filter;
@@ -903,8 +958,11 @@ namespace JiePinPai.Navisworks
                 var button = control as Button;
                 if (button == null)
                     continue;
+                // 仅重绘筛选按钮，跳过“还原全部选择”等非筛选按钮，保留其自定义样式。
+                if (!(button.Tag is SearchResultFilter value))
+                    continue;
 
-                bool active = button.Tag is SearchResultFilter value && value == filter;
+                bool active = value == filter;
                 button.BackColor = active ? Color.FromArgb(37, 99, 235) : Color.White;
                 button.ForeColor = active ? Color.White : Color.FromArgb(51, 65, 85);
             }
@@ -1202,7 +1260,26 @@ namespace JiePinPai.Navisworks
             SetActiveResultFilter(SearchResultFilter.All);
             _btnExportResults.Enabled = false;
             _btnCreateSelectionSet.Enabled = false;
+            ClearSearchSelection();
             UpdateHideButtonState();
+        }
+
+        /// <summary>缓存本次搜索选中的全部对象，并启用“还原全部选择”按钮。</summary>
+        private void RememberSearchSelection(List<ModelItem> keepItems)
+        {
+            _lastSearchSelection = keepItems == null
+                ? new List<ModelItem>()
+                : new List<ModelItem>(keepItems);
+            if (_btnRestoreSelection != null)
+                _btnRestoreSelection.Enabled = _lastSearchSelection.Count > 0;
+        }
+
+        /// <summary>清空缓存的搜索选择并禁用“还原全部选择”按钮。</summary>
+        private void ClearSearchSelection()
+        {
+            _lastSearchSelection = null;
+            if (_btnRestoreSelection != null)
+                _btnRestoreSelection.Enabled = false;
         }
 
         #endregion
@@ -1752,12 +1829,8 @@ namespace JiePinPai.Navisworks
                 return;
             }
 
-            if (_doc == null)
-            {
-                MessageBox.Show(this, "文档无效，请重新打开 Navisworks。",
-                    "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            if (!EnsureDocumentUsable())
                 return;
-            }
 
             InvalidateSearchResults("正在执行搜索，请稍候。");
 
@@ -1909,6 +1982,9 @@ namespace JiePinPai.Navisworks
 
         private void BtnHideUnselected_Click(object sender, EventArgs e)
         {
+            if (!EnsureDocumentUsable())
+                return;
+
             UpdateHideButtonState();
             if (!_btnHideUnselected.Enabled)
             {
@@ -2109,6 +2185,9 @@ namespace JiePinPai.Navisworks
                 finalKeepItems,
                 diagnosticLog);
             int actualSelectionCount = actualSelectionItems.Count;
+            // 缓存搜索选中的全部对象，供“还原全部选择”按钮恢复。
+            if (actualSelectionCount > 0)
+                RememberSearchSelection(finalKeepItems);
             bool actualSelectionMatchesFinalKeep =
                 SelectionEquivalencePolicy.AreEquivalent(
                     finalKeepItems,
@@ -2444,6 +2523,9 @@ namespace JiePinPai.Navisworks
 
         private void ExportResults(ResultExportScope scope)
         {
+            if (!EnsureDocumentUsable())
+                return;
+
             List<SearchResult> exportResults = ResolveExportResults(scope);
             if (exportResults.Count == 0)
             {
@@ -2563,6 +2645,9 @@ namespace JiePinPai.Navisworks
         private void BtnCreateSelectionSet_Click(object sender, EventArgs e)
         {
             if (_lastResults == null || _lastResults.Count == 0) return;
+
+            if (!EnsureDocumentUsable())
+                return;
 
             try
             {
@@ -2738,6 +2823,112 @@ namespace JiePinPai.Navisworks
 
             return uniqueItems.ToList();
         }
+
+        /// <summary>
+        /// 校验捕获的文档是否仍可用（未关闭/未切换）。无模式窗口开着时用户可能
+        /// 关闭或切换文档，此时 _doc 会变为 IsClear 而非 null，需在每个模型操作入口拦截。
+        /// </summary>
+        private bool EnsureDocumentUsable()
+        {
+            if (DocumentIsUsable(_doc))
+                return true;
+
+            MessageBox.Show(
+                this,
+                "当前文档已关闭或切换，请重新打开插件。",
+                "傑出品",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private static bool DocumentIsUsable(Document doc)
+        {
+            if (doc == null)
+                return false;
+            try
+            {
+                return !doc.IsClear;
+            }
+            catch
+            {
+                // 文档被释放/替换时属性访问可能抛异常。
+                return false;
+            }
+        }
+
+        protected override void OnLoad(EventArgs e)
+        {
+            base.OnLoad(e);
+            // 在首次绘制前定位，避免从默认位置跳到右上角的闪烁。
+            PositionForModeless();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            // 仅在正常状态记录位置，避免最小化时的 -32000 哨兵坐标。
+            if (this.WindowState == FormWindowState.Normal)
+                _lastLocation = this.Location;
+            base.OnFormClosed(e);
+        }
+
+        /// <summary>
+        /// 无模式窗口定位：优先复用上次位置，否则停靠到 Navisworks 主窗口右上角，
+        /// 避免遮挡模型中央。用户随后可自由拖动。
+        /// </summary>
+        private void PositionForModeless()
+        {
+            if (_lastLocation.HasValue
+                && IsRectVisible(new Rectangle(_lastLocation.Value, this.Size)))
+            {
+                this.Location = _lastLocation.Value;
+                return;
+            }
+
+            RECT r;
+            if (_ownerHandle != IntPtr.Zero && GetWindowRect(_ownerHandle, out r))
+            {
+                Rectangle owner = Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom);
+                Rectangle work = Screen.FromHandle(_ownerHandle).WorkingArea;
+                int margin = ScaleLogical(16);
+                int x = owner.Right - this.Width - margin;
+                int y = owner.Top + margin;
+                x = Math.Max(work.Left, Math.Min(x, work.Right - this.Width));
+                y = Math.Max(work.Top, Math.Min(y, work.Bottom - this.Height));
+                this.Location = new Point(x, y);
+                return;
+            }
+
+            Rectangle prim = Screen.PrimaryScreen.WorkingArea;
+            this.Location = new Point(
+                prim.Left + (prim.Width - this.Width) / 2,
+                prim.Top + (prim.Height - this.Height) / 2);
+        }
+
+        private static bool IsRectVisible(Rectangle rect)
+        {
+            foreach (Screen screen in Screen.AllScreens)
+            {
+                if (screen.WorkingArea.IntersectsWith(rect))
+                    return true;
+            }
+            return false;
+        }
+
+        [System.Runtime.InteropServices.StructLayout(
+            System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct RECT
+        {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(
+            System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
 
         #endregion
     }
