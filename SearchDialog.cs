@@ -77,6 +77,8 @@ namespace JiePinPai.Navisworks
         private List<ModelItem> _lastMatchedItemsInScope = new List<ModelItem>();
         private HashSet<int> _checkedExportResultIndices = new HashSet<int>();
         private bool _updatingExportChecks;
+        // 最近一次隐藏/选择操作的最终保留对象数量，用于完成提示。
+        private int _lastFinalKeepCount;
 
         // ── 列索引常量 ──
         private const int COL_CATEGORY = 0;
@@ -2001,17 +2003,21 @@ namespace JiePinPai.Navisworks
                 ? LogService.CreateDiagnosticSession(_doc, _currentXmlPath, _conditions.Count)
                 : null;
 
+            bool hideExecuted = false;
             try
             {
-                _btnSearch.Enabled = false;
-                _btnHideUnselected.Enabled = false;
+                // 立即进入忙碌态并强制重绘，避免"点了没反应"的错觉——
+                // 隐藏在 UI 主线程同步执行，若不先绘出忙碌态，界面会直接卡住数秒。
+                SetHideBusy(true);
+                Refresh();
+
                 diagnosticLog?.LogMode("主界面：使用最近一次有效搜索结果执行隐藏");
                 diagnosticLog?.LogHideIntent(true);
                 diagnosticLog?.LogSearchResults(
                     _lastResults,
                     SearchResultPolicy.CanHide(_lastResults.Select(r => r.Status)));
 
-                bool hideExecuted = ExecuteCachedResultAction(false, diagnosticLog);
+                hideExecuted = ExecuteCachedResultAction(false, diagnosticLog);
                 if (hideExecuted)
                     _lastHideExecuted = true;
             }
@@ -2028,9 +2034,28 @@ namespace JiePinPai.Navisworks
             finally
             {
                 diagnosticLog?.WriteToFile();
-                _btnSearch.Enabled = true;
+                SetHideBusy(false);
                 UpdateHideButtonState();
             }
+
+            // 真正完成隐藏后给非阻塞完成提示（此时内部各类确认/校验框都已走完）。
+            if (hideExecuted)
+            {
+                _lblResultSummary.Text =
+                    $"已隐藏未选中，保留 {_lastFinalKeepCount} 个对象。";
+            }
+        }
+
+        /// <summary>隐藏操作的忙碌态：等待光标 + 按钮"正在隐藏..." + 禁用交互。</summary>
+        private void SetHideBusy(bool busy)
+        {
+            Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
+            UseWaitCursor = busy;
+            _btnSearch.Enabled = !busy;
+            _btnHideUnselected.Enabled = !busy;
+            _btnHideUnselected.Text = busy ? "正在隐藏..." : "隐藏未选中";
+            _tabControl.Enabled = !busy;
+            _btnClose.Enabled = !busy;
         }
 
         private bool ExecuteCachedResultAction(
@@ -2159,6 +2184,7 @@ namespace JiePinPai.Navisworks
             List<ModelItem> finalKeepItems = MergeUniqueItems(
                 _lastMatchedItemsInScope,
                 protectedKeepResult.ProtectedItems);
+            _lastFinalKeepCount = finalKeepItems.Count;
             if (finalKeepItems.Count == 0)
             {
                 diagnosticLog?.LogFinalKeepStats(

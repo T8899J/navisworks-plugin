@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using Autodesk.Navisworks.Api;
 
@@ -68,16 +69,22 @@ namespace JiePinPai.Navisworks
                     return false;
                 }
 
-                RestoreCurrentSelection(doc, matchedItemList);
+                // 注：调用方（ExecuteCachedResultAction）在调用本方法前已
+                // SetSelection(finalKeepItems) 并通过 AreEquivalent 校验，当前选择
+                // 即等于 matchedItemList，故此处无需再次写入选择（省一次大集合写入）。
 
+                var sw = Stopwatch.StartNew();
                 stateType.InvokeMember(
                     "InvertSelection",
                     BindingFlags.InvokeMethod,
                     null,
                     state,
                     null);
+                diagnosticLog?.LogDecision(
+                    $"[计时] InvertSelection 耗时 {sw.ElapsedMilliseconds} ms");
 
                 // GetSelectedItems(Document) may not exist in 2021 — probe via reflection
+                sw.Restart();
                 ModelItemCollection invertedSelection;
                 MethodInfo getSelectedMethod = typeof(ModelItemCollection).GetMethod(
                     "GetSelectedItems", new[] { typeof(Document) });
@@ -90,18 +97,26 @@ namespace JiePinPai.Navisworks
                 {
                     // Fallback: iterate current selection items
                     invertedSelection = new ModelItemCollection();
-                    foreach (ModelItem item in doc.CurrentSelection.SelectedItems)
-                        invertedSelection.Add(item);
+                    invertedSelection.AddRange(doc.CurrentSelection.SelectedItems);
                 }
+                diagnosticLog?.LogDecision(
+                    $"[计时] 获取反选集合({invertedSelection.Count} 项)耗时 " +
+                    $"{sw.ElapsedMilliseconds} ms");
 
-                var toHide = new ModelItemCollection();
+                // 先在托管 List 中筛出待隐藏项，再一次性 AddRange 进内核集合，
+                // 避免逐项 Add 反复跨托管/内核边界（原逐项 Add 是主要耗时点）。
+                sw.Restart();
+                var toHideList = new List<ModelItem>(invertedSelection.Count);
                 foreach (ModelItem item in invertedSelection)
                 {
                     if (!item.IsHidden)
-                    {
-                        toHide.Add(item);
-                    }
+                        toHideList.Add(item);
                 }
+                var toHide = new ModelItemCollection();
+                toHide.AddRange(toHideList);
+                diagnosticLog?.LogDecision(
+                    $"[计时] 遍历 IsHidden 构建 toHide({toHide.Count} 项)耗时 " +
+                    $"{sw.ElapsedMilliseconds} ms");
 
                 diagnosticLog?.LogHideCandidateCounts(
                     invertedSelection.Count,
@@ -110,15 +125,21 @@ namespace JiePinPai.Navisworks
 
                 if (toHide.Count > 0)
                 {
+                    sw.Restart();
                     stateType.InvokeMember(
                         "SetSelectionHidden",
                         BindingFlags.InvokeMethod,
                         null,
                         state,
                         new object[] { toHide, true });
+                    diagnosticLog?.LogDecision(
+                        $"[计时] SetSelectionHidden 耗时 {sw.ElapsedMilliseconds} ms");
                 }
 
+                sw.Restart();
                 RestoreCurrentSelection(doc, matchedItemList);
+                diagnosticLog?.LogDecision(
+                    $"[计时] 恢复选择耗时 {sw.ElapsedMilliseconds} ms");
 
                 success = true;
                 diagnosticLog?.LogHideOutcome(success: true, errorOccurred: false);

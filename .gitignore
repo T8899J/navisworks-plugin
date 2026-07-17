@@ -10,3 +10,6 @@
 # Visual Studio user state
 *.user
 *.suo
+
+# Local file backups (pre-edit snapshots)
+.backup/
