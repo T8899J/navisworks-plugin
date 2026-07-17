@@ -19,6 +19,7 @@
     <Compile Include="..\..\SearchConditionValidator.cs" Link="Production\SearchConditionValidator.cs" />
     <Compile Include="..\..\SelectionEquivalencePolicy.cs" Link="Production\SelectionEquivalencePolicy.cs" />
     <Compile Include="..\..\ResultExportPolicy.cs" Link="Production\ResultExportPolicy.cs" />
+    <Compile Include="..\..\DuplicateMatchInclusionPolicy.cs" Link="Production\DuplicateMatchInclusionPolicy.cs" />
     <Compile Include="..\..\OneToOneMatchPolicy.cs" Link="Production\OneToOneMatchPolicy.cs" />
   </ItemGroup>
 </Project>

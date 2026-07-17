@@ -10,6 +10,7 @@ using System.Windows.Forms;
 using Autodesk.Navisworks.Api;
 using CheckBoxState = System.Windows.Forms.VisualStyles.CheckBoxState;
 using Color = System.Drawing.Color;
+using NavApp = Autodesk.Navisworks.Api.Application;
 
 namespace JiePinPai.Navisworks
 {
@@ -75,8 +76,10 @@ namespace JiePinPai.Navisworks
         private string _currentModelPrefix;
         private List<ModelItem> _lastScopeRoots = new List<ModelItem>();
         private List<ModelItem> _lastMatchedItemsInScope = new List<ModelItem>();
+        private List<ModelItem> _lastProtectedItems = new List<ModelItem>();
         private HashSet<int> _checkedExportResultIndices = new HashSet<int>();
-        private bool _updatingExportChecks;
+        private HashSet<int> _includedDuplicateResultIndices = new HashSet<int>();
+        private bool _updatingResultChecks;
         // 最近一次隐藏/选择操作的最终保留对象数量，用于完成提示。
         private int _lastFinalKeepCount;
 
@@ -86,6 +89,7 @@ namespace JiePinPai.Navisworks
         private const int COL_TEST = 2;
         private const int COL_VALUE = 3;
         private const int RESULT_COL_EXPORT = 0;
+        private const int RESULT_COL_INCLUDE_MATCH = 1;
         private const int BASE_DPI = 96;
         private static readonly Regex ModelPrefixRegex =
             new Regex(@"^(TS-M[0-9A-Z]+)-", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -793,6 +797,25 @@ namespace JiePinPai.Navisworks
             exportColumn.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
             exportColumn.HeaderCell.ToolTipText = "单击表头可勾选或取消当前筛选下的全部结果";
             grid.Columns.Add(exportColumn);
+            var includeMatchColumn = new DataGridViewCheckBoxColumn
+            {
+                Name = "IncludeInMatch",
+                HeaderText = "计入匹配",
+                Width = ScaleLogical(72),
+                MinimumWidth = ScaleLogical(72),
+                ThreeState = false,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                ReadOnly = false,
+                Resizable = DataGridViewTriState.False,
+                FlatStyle = FlatStyle.Standard,
+            };
+            includeMatchColumn.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
+            includeMatchColumn.HeaderCell.Style.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
+            includeMatchColumn.HeaderCell.ToolTipText =
+                "唯一找到项固定计入；重复项可选择是否计入匹配对象总数和后续操作";
+            grid.Columns.Add(includeMatchColumn);
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "ConditionIndex",
@@ -843,7 +866,7 @@ namespace JiePinPai.Navisworks
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
                 FillWeight = 48F,
             });
-            for (int columnIndex = 1; columnIndex < grid.Columns.Count; columnIndex++)
+            for (int columnIndex = 2; columnIndex < grid.Columns.Count; columnIndex++)
                 grid.Columns[columnIndex].ReadOnly = true;
             return grid;
         }
@@ -854,7 +877,8 @@ namespace JiePinPai.Navisworks
         {
             if (e.RowIndex < 0 || e.RowIndex >= _resultsGrid.Rows.Count)
                 return;
-            if (e.ColumnIndex == RESULT_COL_EXPORT)
+            if (e.ColumnIndex == RESULT_COL_EXPORT
+                || e.ColumnIndex == RESULT_COL_INCLUDE_MATCH)
                 return;
 
             var result = _resultsGrid.Rows[e.RowIndex].Tag as SearchResult;
@@ -973,7 +997,7 @@ namespace JiePinPai.Navisworks
 
         private void RefreshResultsGrid(IEnumerable<SearchResult> results)
         {
-            _updatingExportChecks = true;
+            _updatingResultChecks = true;
             try
             {
                 _resultsGrid.Rows.Clear();
@@ -983,8 +1007,10 @@ namespace JiePinPai.Navisworks
                         continue;
 
                     int displayIndex = result.Condition.DisplayIndex;
+                    bool includeInMatch = IsResultIncludedInMatch(result);
                     int rowIndex = _resultsGrid.Rows.Add(
                         _checkedExportResultIndices.Contains(displayIndex),
+                        includeInMatch,
                         displayIndex,
                         SearchResultPolicy.GetDisplayName(result.Status),
                         result.Condition.GetCategoryName(),
@@ -998,7 +1024,10 @@ namespace JiePinPai.Navisworks
                     ApplyResultRowStyle(row, result.Status);
                     row.Cells[RESULT_COL_EXPORT].ToolTipText =
                         "勾选后可通过底部“导出结果”导出该条件";
-                    for (int cellIndex = 1; cellIndex < row.Cells.Count; cellIndex++)
+                    ConfigureIncludeMatchCell(
+                        row.Cells[RESULT_COL_INCLUDE_MATCH],
+                        result);
+                    for (int cellIndex = 2; cellIndex < row.Cells.Count; cellIndex++)
                     {
                         DataGridViewCell cell = row.Cells[cellIndex];
                         cell.ToolTipText = Convert.ToString(cell.Value);
@@ -1007,7 +1036,7 @@ namespace JiePinPai.Navisworks
             }
             finally
             {
-                _updatingExportChecks = false;
+                _updatingResultChecks = false;
             }
 
             UpdateExportSelectionState();
@@ -1016,19 +1045,53 @@ namespace JiePinPai.Navisworks
         private void ResultsGrid_CurrentCellDirtyStateChanged(object sender, EventArgs e)
         {
             if (_resultsGrid.IsCurrentCellDirty
-                && _resultsGrid.CurrentCell?.ColumnIndex == RESULT_COL_EXPORT)
+                && (_resultsGrid.CurrentCell?.ColumnIndex == RESULT_COL_EXPORT
+                    || _resultsGrid.CurrentCell?.ColumnIndex == RESULT_COL_INCLUDE_MATCH))
             {
                 _resultsGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
             }
+        }
+
+        private bool IsResultIncludedInMatch(SearchResult result)
+        {
+            if (result?.Condition == null)
+                return false;
+            if (result.Status == SearchResultStatus.Found)
+                return true;
+            return result.Status == SearchResultStatus.Duplicate
+                && _includedDuplicateResultIndices.Contains(
+                    result.Condition.DisplayIndex);
+        }
+
+        private void ConfigureIncludeMatchCell(
+            DataGridViewCell cell,
+            SearchResult result)
+        {
+            bool isDuplicate = result.Status == SearchResultStatus.Duplicate;
+            cell.ReadOnly = !isDuplicate || _lastHideExecuted;
+
+            if (result.Status == SearchResultStatus.Found)
+            {
+                cell.ToolTipText = "唯一找到项始终计入匹配对象总数";
+                return;
+            }
+
+            if (isDuplicate)
+            {
+                cell.ToolTipText = _lastHideExecuted
+                    ? "本次隐藏已经执行，重新搜索后才能调整"
+                    : "勾选后，该重复条件命中的对象将计入总数、选择集和隐藏保留集合";
+                return;
+            }
+
+            cell.ToolTipText = "该条件没有可计入的匹配对象";
         }
 
         private void ResultsGrid_CellValueChanged(
             object sender,
             DataGridViewCellEventArgs e)
         {
-            if (_updatingExportChecks
-                || e.RowIndex < 0
-                || e.ColumnIndex != RESULT_COL_EXPORT)
+            if (_updatingResultChecks || e.RowIndex < 0)
             {
                 return;
             }
@@ -1038,14 +1101,83 @@ namespace JiePinPai.Navisworks
             if (result?.Condition == null)
                 return;
 
-            bool selected = Convert.ToBoolean(row.Cells[RESULT_COL_EXPORT].Value);
             int displayIndex = result.Condition.DisplayIndex;
-            if (selected)
-                _checkedExportResultIndices.Add(displayIndex);
-            else
-                _checkedExportResultIndices.Remove(displayIndex);
+            if (e.ColumnIndex == RESULT_COL_EXPORT)
+            {
+                bool selected = Convert.ToBoolean(
+                    row.Cells[RESULT_COL_EXPORT].Value);
+                if (selected)
+                    _checkedExportResultIndices.Add(displayIndex);
+                else
+                    _checkedExportResultIndices.Remove(displayIndex);
 
-            UpdateExportSelectionState();
+                UpdateExportSelectionState();
+                return;
+            }
+
+            if (e.ColumnIndex == RESULT_COL_INCLUDE_MATCH
+                && result.Status == SearchResultStatus.Duplicate
+                && !_lastHideExecuted)
+            {
+                bool included = Convert.ToBoolean(
+                    row.Cells[RESULT_COL_INCLUDE_MATCH].Value);
+                if (included)
+                    _includedDuplicateResultIndices.Add(displayIndex);
+                else
+                    _includedDuplicateResultIndices.Remove(displayIndex);
+
+                RecalculateEffectiveMatchContext(updateRestoreSelection: true);
+            }
+        }
+
+        private void RecalculateEffectiveMatchContext(bool updateRestoreSelection)
+        {
+            List<ModelItem> effectiveItems = ResolveEffectiveMatchedItems(
+                _lastResults ?? Enumerable.Empty<SearchResult>());
+            _lastMatchedItemsInScope = effectiveItems;
+            _lastTotalMatched = effectiveItems.Count;
+
+            if (updateRestoreSelection)
+            {
+                RememberSearchSelection(MergeUniqueItems(
+                    effectiveItems,
+                    _lastProtectedItems));
+            }
+
+            UpdateResultSummary(
+                _lastResults ?? new List<SearchResult>(),
+                _lastTotalMatched,
+                _currentModelPrefix);
+            _btnCreateSelectionSet.Enabled = _lastTotalMatched > 0;
+            UpdateHideButtonState();
+        }
+
+        private List<ModelItem> ResolveEffectiveMatchedItems(
+            IEnumerable<SearchResult> results)
+        {
+            List<SearchResult> resultList = (results ?? Enumerable.Empty<SearchResult>())
+                .Where(result => result != null)
+                .ToList();
+            IEnumerable<ModelItem> foundItems = resultList
+                .Where(result => result.Status == SearchResultStatus.Found)
+                .SelectMany(result => result.MatchedItems ?? new List<ModelItem>());
+            var duplicateItemsByResult = new Dictionary<int, IReadOnlyList<ModelItem>>();
+            foreach (SearchResult result in resultList)
+            {
+                if (result.Status != SearchResultStatus.Duplicate
+                    || result.Condition == null)
+                {
+                    continue;
+                }
+
+                duplicateItemsByResult[result.Condition.DisplayIndex] =
+                    result.MatchedItems ?? new List<ModelItem>();
+            }
+
+            return DuplicateMatchInclusionPolicy.ResolveEffectiveItems(
+                foundItems,
+                duplicateItemsByResult,
+                _includedDuplicateResultIndices);
         }
 
         private void ResultsGrid_ColumnHeaderMouseClick(
@@ -1256,7 +1388,9 @@ namespace JiePinPai.Navisworks
             _currentModelPrefix = null;
             _lastScopeRoots.Clear();
             _lastMatchedItemsInScope.Clear();
+            _lastProtectedItems.Clear();
             _checkedExportResultIndices.Clear();
+            _includedDuplicateResultIndices.Clear();
             _lblResultSummary.Text = message;
             UpdateResultFilterCaptions(Array.Empty<SearchResult>());
             SetActiveResultFilter(SearchResultFilter.All);
@@ -1655,7 +1789,8 @@ namespace JiePinPai.Navisworks
             T("  【模式 B：查找 + 隐藏未选中】");
             T("  搜索并选中后弹窗确认，确认后隐藏不相关的对象，只保留匹配项和 STR 结构节点。");
             T("  任一条件未找到、重复或条件异常时会暂停隐藏并显示警告，可返回检查或明确选择继续。");
-            T("  选择继续时会保留实际匹配对象；跨条件重复指向的同一对象只保留一份。");
+            T("  重复项默认不计入；在结果页勾选“计入匹配”后，才会进入总数和后续操作。");
+            T("  选择继续时只保留计入匹配的对象；同一对象无论被多少条件命中都只保留一份。");
             T("");
             T("  【诊断日志（默认关闭）】勾选后每次搜索输出详细诊断文件。日常无需开启，排查问题时使用。");
             G();
@@ -1667,8 +1802,9 @@ namespace JiePinPai.Navisworks
 
             H("第六步：查看结果与后续操作");
             T("");
-            T("  【结果摘要】显示已找到、未找到、重复、条件异常和总匹配对象数量。");
-            T("  【详细列表】可筛选问题项、勾选导出条件；双击重复结果会临时定位，关闭提示后恢复原选择。");
+            T("  【结果摘要】显示四种条件状态、匹配对象总数，以及重复项是否计入。");
+            T("  【选择】只控制结果导出；【计入匹配】控制重复项是否进入总数和后续操作。");
+            T("  【详细列表】双击重复结果会定位并聚焦，查看后点击“还原全部选择”。");
             T("  “勾选”只决定导出哪些条件，不会改变 Navisworks 当前模型选择。");
             T("");
             T("  搜索完成后，底部按钮启用：");
@@ -1919,16 +2055,20 @@ namespace JiePinPai.Navisworks
                 results = ModelItemMatcher.MatchAll(
                     _doc, scopeRoots, _conditions);
 
-                matchedItemsInScope =
+                List<ModelItem> rawMatchedItemsInScope =
                     MergeUniqueItems(results.SelectMany(r => r.MatchedItems));
+                matchedItemsInScope = ResolveEffectiveMatchedItems(results);
                 totalMatched = matchedItemsInScope.Count;
                 bool resultGatePassed = SearchResultPolicy.CanHide(
                     results.Select(r => r.Status));
 
                 diagnosticLog?.LogXmlScopeResultStats(
                     results.Sum(r => r.MatchCount),
-                    matchedItemsInScope.Count,
+                    rawMatchedItemsInScope.Count,
                     0);
+                diagnosticLog?.LogDecision(
+                    $"有效匹配对象数量: {matchedItemsInScope.Count}; " +
+                    "重复项默认不计入。");
                 diagnosticLog?.LogSearchResults(results, resultGatePassed);
 
                 _lastScopeRoots = new List<ModelItem>(scopeRoots);
@@ -1942,6 +2082,7 @@ namespace JiePinPai.Navisworks
                 if (hideExecuted)
                 {
                     _lastHideExecuted = true;
+                    RefreshResultsGrid(_lastResults);
                     UpdateHideButtonState();
                 }
             }
@@ -2019,7 +2160,10 @@ namespace JiePinPai.Navisworks
 
                 hideExecuted = ExecuteCachedResultAction(false, diagnosticLog);
                 if (hideExecuted)
+                {
                     _lastHideExecuted = true;
+                    RefreshResultsGrid(_lastResults);
+                }
             }
             catch (Exception ex)
             {
@@ -2157,6 +2301,8 @@ namespace JiePinPai.Navisworks
                     _doc,
                     protectedName);
             }
+            _lastProtectedItems = new List<ModelItem>(
+                protectedKeepResult.ProtectedItems);
 
             diagnosticLog?.LogProtectedNodeStats(
                 protectedKeepResult.TargetNodeName,
@@ -2272,7 +2418,7 @@ namespace JiePinPai.Navisworks
             {
                 string message =
                     "【模式 A：仅查找并选中】\n\n" +
-                    $"范围内命中对象：{_lastMatchedItemsInScope.Count} 个\n" +
+                    $"计入匹配对象：{_lastMatchedItemsInScope.Count} 个\n" +
                     $"当前模型 STR 保留对象：{protectedKeepResult.ProtectedItems.Count} 个\n" +
                     $"最终保留对象：{finalKeepItems.Count} 个\n\n" +
                     "插件已选中最终保留对象，未执行隐藏。";
@@ -2289,7 +2435,7 @@ namespace JiePinPai.Navisworks
             {
                 DialogResult choice = MessageBox.Show(
                     this,
-                    $"范围内命中对象数量：{_lastMatchedItemsInScope.Count}\n" +
+                    $"计入匹配对象数量：{_lastMatchedItemsInScope.Count}\n" +
                     $"当前模型 STR 保留对象数量：{protectedKeepResult.ProtectedItems.Count}\n" +
                     $"最终保留对象数量：{finalKeepItems.Count}\n" +
                     $"当前 Navisworks 实际选择数量：{actualSelectionCount}\n\n" +
@@ -2319,11 +2465,12 @@ namespace JiePinPai.Navisworks
 
             try
             {
-                SelectionService.SetSelection(
+                List<ModelItem> actualSelection = SelectionService.SetSelection(
                     _doc,
                     _lastMatchedItemsInScope,
                     diagnosticLog);
-                int actualSelectionCount = SnapshotCurrentSelection(_doc).Count;
+                RememberSearchSelection(actualSelection);
+                int actualSelectionCount = actualSelection.Count;
                 diagnosticLog?.LogDecision(
                     $"问题结果定位实际选择数量: {actualSelectionCount}");
                 return string.Empty;
@@ -2405,15 +2552,15 @@ namespace JiePinPai.Navisworks
                 };
 
                 string continueNote = canContinue
-                    ? "继续后将保留所有已匹配对象；重复条件的全部匹配对象都会保留，" +
-                      "未找到和条件异常不贡献对象。STR 保护与选择一致性检查仍然执行。"
+                    ? "继续后只保留当前计入匹配的对象；未勾选的重复项、未找到和" +
+                      "条件异常不贡献对象。STR 保护与选择一致性检查仍然执行。"
                     : "当前没有任何匹配对象，不能继续隐藏，防止隐藏整个模型。";
                 var details = new Label
                 {
                     Text =
                         $"未找到：{notFoundCount} 条    重复：{duplicateCount} 条    " +
                         $"条件异常：{invalidCount} 条\n\n" +
-                        $"当前去重后的匹配对象：{totalMatched} 个\n\n" +
+                        $"当前计入匹配的对象：{totalMatched} 个（按对象去重）\n\n" +
                         continueNote +
                         (inspectionSelectionNote ?? string.Empty),
                     Dock = DockStyle.Fill,
@@ -2517,19 +2664,40 @@ namespace JiePinPai.Navisworks
             int totalMatched,
             string scopeLabel)
         {
-            int found = results.Count(r => r.Status == SearchResultStatus.Found);
-            int notFound = results.Count(r => r.Status == SearchResultStatus.NotFound);
-            int duplicate = results.Count(r => r.Status == SearchResultStatus.Duplicate);
-            int invalid = results.Count(r => r.Status == SearchResultStatus.ConditionInvalid);
-
-            _lblResultSummary.Text =
-                $"范围：{scopeLabel}　　条件总数：{results.Count}　　" +
-                $"已找到：{found}　未找到：{notFound}　重复：{duplicate}　条件异常：{invalid}\n" +
-                $"去重后的总匹配对象：{totalMatched} 个";
+            UpdateResultSummary(results, totalMatched, scopeLabel);
             UpdateResultFilterCaptions(results);
             SetActiveResultFilter(results.Any(r => r.IsProblem)
                 ? SearchResultFilter.Problems
                 : SearchResultFilter.All);
+        }
+
+        private void UpdateResultSummary(
+            IReadOnlyCollection<SearchResult> results,
+            int totalMatched,
+            string scopeLabel)
+        {
+            results = results ?? Array.Empty<SearchResult>();
+            int found = results.Count(r => r.Status == SearchResultStatus.Found);
+            int notFound = results.Count(r => r.Status == SearchResultStatus.NotFound);
+            int duplicate = results.Count(r => r.Status == SearchResultStatus.Duplicate);
+            int invalid = results.Count(r => r.Status == SearchResultStatus.ConditionInvalid);
+            int includedDuplicate = results.Count(r =>
+                r.Status == SearchResultStatus.Duplicate
+                && r.Condition != null
+                && _includedDuplicateResultIndices.Contains(
+                    r.Condition.DisplayIndex));
+            string duplicateContribution;
+            if (duplicate == 0)
+                duplicateContribution = "无重复项";
+            else if (includedDuplicate == 0)
+                duplicateContribution = "重复项未计入";
+            else
+                duplicateContribution = $"已计入 {includedDuplicate} 条重复项，按对象去重";
+
+            _lblResultSummary.Text =
+                $"范围：{scopeLabel}　　条件总数：{results.Count}　　" +
+                $"已找到：{found}　未找到：{notFound}　重复：{duplicate}　条件异常：{invalid}\n" +
+                $"匹配对象总数：{totalMatched} 个（{duplicateContribution}）";
         }
 
         #endregion
@@ -2583,7 +2751,7 @@ namespace JiePinPai.Navisworks
                         using (var writer = new StreamWriter(dialog.FileName, false, System.Text.Encoding.UTF8))
                         {
                             writer.WriteLine(
-                                "条件序号,状态,CategoryDisplay,CategoryInternal,PropertyDisplay,PropertyInternal,匹配方式,查询值,匹配数,说明,匹配对象详情");
+                                "条件序号,状态,计入总匹配,CategoryDisplay,CategoryInternal,PropertyDisplay,PropertyInternal,匹配方式,查询值,匹配数,说明,匹配对象详情");
                             foreach (SearchResult result in exportResults)
                             {
                                 SearchConditionSnapshot condition = result?.Condition;
@@ -2591,6 +2759,7 @@ namespace JiePinPai.Navisworks
                                 {
                                     condition == null ? string.Empty : condition.DisplayIndex.ToString(),
                                     result == null ? string.Empty : SearchResultPolicy.GetDisplayName(result.Status),
+                                    IsResultIncludedInMatch(result) ? "是" : "否",
                                     condition?.CategoryDisplay,
                                     condition?.CategoryInternal,
                                     condition?.PropertyDisplay,
@@ -2677,8 +2846,7 @@ namespace JiePinPai.Navisworks
 
             try
             {
-                var flatItems = MergeUniqueItems(
-                    _lastResults.SelectMany(r => r.MatchedItems));
+                var flatItems = new List<ModelItem>(_lastMatchedItemsInScope);
 
                 if (flatItems.Count == 0)
                 {
@@ -2851,12 +3019,12 @@ namespace JiePinPai.Navisworks
         }
 
         /// <summary>
-        /// 校验捕获的文档是否仍可用（未关闭/未切换）。无模式窗口开着时用户可能
-        /// 关闭或切换文档，此时 _doc 会变为 IsClear 而非 null，需在每个模型操作入口拦截。
+        /// 校验捕获的文档是否仍可用且仍是活动文档。无模式窗口开着时用户可能
+        /// 关闭或切换文档，需在每个模型操作入口拦截。
         /// </summary>
         private bool EnsureDocumentUsable()
         {
-            if (DocumentIsUsable(_doc))
+            if (DocumentIsUsable(_doc) && IsActiveDocument(_doc))
                 return true;
 
             MessageBox.Show(
@@ -2866,6 +3034,18 @@ namespace JiePinPai.Navisworks
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);
             return false;
+        }
+
+        private static bool IsActiveDocument(Document doc)
+        {
+            try
+            {
+                return doc != null && ReferenceEquals(NavApp.ActiveDocument, doc);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool DocumentIsUsable(Document doc)

@@ -41,6 +41,7 @@ SearchResult.cs            — 结果 POCO
 SearchResultPolicy.cs      — 四态唯一性结果策略
 SearchResultStatus.cs      — 已找到、未找到、重复、条件异常状态
 ResultExportPolicy.cs      — 已勾选、当前筛选、全部结果的导出范围策略
+DuplicateMatchInclusionPolicy.cs — 重复项贡献与对象级去重策略
 OneToOneMatchPolicy.cs     — 跨条件对象一对一占用策略
 ModelItemMatcher.cs        — 匹配引擎 (原生 Search.FindAll API)
 SelectionService.cs        — 选中 + 创建 SelectionSet
@@ -60,6 +61,7 @@ ProtectedKeepService.cs    — STR 保护节点查找 (BFS)
 - **搜索后选中再隐藏** — 问题结果默认暂停隐藏，用户明确确认后可继续；自动流程和主界面按钮共用 STR、最终集合与实际选择校验，覆盖确认只绕过唯一性要求
 - **全局一对一匹配** — 单条条件必须只命中 1 个对象，且同一对象只能归属第一条有效条件；后续重复引用标记为重复
 - **导出选择独立于模型选择** — 结果行复选框只记录条件序号；跨筛选保留，结果失效即清空，不修改 Navisworks CurrentSelection
+- **重复项显式计入** — 唯一找到项固定计入，重复项默认不计入并由用户逐条选择；有效集合统一驱动摘要、还原选择、选择集和隐藏
 
 ## 禁止事项
 

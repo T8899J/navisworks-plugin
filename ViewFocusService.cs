@@ -1,6 +1,7 @@
 using System;
 using Autodesk.Navisworks.Api;
 using Autodesk.Navisworks.Api.ComApi;
+using NavApp = Autodesk.Navisworks.Api.Application;
 
 namespace JiePinPai.Navisworks
 {
@@ -20,9 +21,9 @@ namespace JiePinPai.Navisworks
             Document doc,
             DiagnosticLogSession diagnosticLog = null)
         {
-            if (doc == null || IsDocumentClear(doc))
+            if (doc == null || IsDocumentClear(doc) || !IsActiveDocument(doc))
             {
-                diagnosticLog?.LogDecision("相机聚焦跳过：文档不可用。");
+                diagnosticLog?.LogDecision("相机聚焦跳过：文档不可用或已不是活动文档。");
                 return false;
             }
 
@@ -56,6 +57,18 @@ namespace JiePinPai.Navisworks
             catch
             {
                 return true;
+            }
+        }
+
+        private static bool IsActiveDocument(Document doc)
+        {
+            try
+            {
+                return ReferenceEquals(NavApp.ActiveDocument, doc);
+            }
+            catch
+            {
+                return false;
             }
         }
     }

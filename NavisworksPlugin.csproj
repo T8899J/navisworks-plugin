@@ -95,6 +95,7 @@
     <Compile Include="ModelItemMatcher.cs" />
     <Compile Include="SelectionService.cs" />
     <Compile Include="SelectionEquivalencePolicy.cs" />
+    <Compile Include="DuplicateMatchInclusionPolicy.cs" />
     <Compile Include="HideServiceFixed.cs" />
     <Compile Include="ViewFocusService.cs" />
     <Compile Include="ProtectedKeepService.cs" />
