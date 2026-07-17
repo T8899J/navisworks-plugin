@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Reflection;
 using Autodesk.Navisworks.Api;
 
@@ -73,18 +72,14 @@ namespace JiePinPai.Navisworks
                 // SetSelection(finalKeepItems) 并通过 AreEquivalent 校验，当前选择
                 // 即等于 matchedItemList，故此处无需再次写入选择（省一次大集合写入）。
 
-                var sw = Stopwatch.StartNew();
                 stateType.InvokeMember(
                     "InvertSelection",
                     BindingFlags.InvokeMethod,
                     null,
                     state,
                     null);
-                diagnosticLog?.LogDecision(
-                    $"[计时] InvertSelection 耗时 {sw.ElapsedMilliseconds} ms");
 
                 // GetSelectedItems(Document) may not exist in 2021 — probe via reflection
-                sw.Restart();
                 ModelItemCollection invertedSelection;
                 MethodInfo getSelectedMethod = typeof(ModelItemCollection).GetMethod(
                     "GetSelectedItems", new[] { typeof(Document) });
@@ -99,9 +94,6 @@ namespace JiePinPai.Navisworks
                     invertedSelection = new ModelItemCollection();
                     invertedSelection.AddRange(doc.CurrentSelection.SelectedItems);
                 }
-                diagnosticLog?.LogDecision(
-                    $"[计时] 获取反选集合({invertedSelection.Count} 项)耗时 " +
-                    $"{sw.ElapsedMilliseconds} ms");
 
                 // 直接以反选集合作为待隐藏集：SetSelectionHidden 把指定项的
                 // IsHidden 设为 true，对已隐藏项重复设置是幂等无害的，因此无需
@@ -115,21 +107,15 @@ namespace JiePinPai.Navisworks
 
                 if (toHide.Count > 0)
                 {
-                    sw.Restart();
                     stateType.InvokeMember(
                         "SetSelectionHidden",
                         BindingFlags.InvokeMethod,
                         null,
                         state,
                         new object[] { toHide, true });
-                    diagnosticLog?.LogDecision(
-                        $"[计时] SetSelectionHidden 耗时 {sw.ElapsedMilliseconds} ms");
                 }
 
-                sw.Restart();
                 RestoreCurrentSelection(doc, matchedItemList);
-                diagnosticLog?.LogDecision(
-                    $"[计时] 恢复选择耗时 {sw.ElapsedMilliseconds} ms");
 
                 success = true;
                 diagnosticLog?.LogHideOutcome(success: true, errorOccurred: false);
