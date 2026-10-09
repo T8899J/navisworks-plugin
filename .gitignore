@@ -13,3 +13,13 @@
 
 # Local file backups (pre-edit snapshots)
 .backup/
+
+# Installer packages and validation outputs
+release/
+dist/
+artifacts/
+.release-staging/
+.release-backup/
+.release-archive-staging.zip
+.archive-verification/
+.test-*/

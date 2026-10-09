@@ -20,3 +20,12 @@ using System.Runtime.InteropServices;
 // 程序集版本信息
 [assembly: AssemblyVersion("1.3.1.0")]
 [assembly: AssemblyFileVersion("1.3.1.0")]
+
+// The distribution profile is embedded in the DLL so packaging can verify it.
+#if DISABLE_BATCH_MEASUREMENT
+[assembly: AssemblyMetadata("BatchTrayMeasurement", "disabled")]
+#else
+[assembly: AssemblyMetadata("BatchTrayMeasurement", "enabled")]
+#endif
+[assembly: AssemblyMetadata("QuickTrayMeasurement", "enabled")]
+[assembly: AssemblyMetadata("QuickTrayMeasurementEntry", "JiePinPai_QuickTrayMeasurement")]

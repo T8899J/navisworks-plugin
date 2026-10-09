@@ -40,6 +40,11 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
 
+  <!-- Optional distribution profile; normal builds retain batch measurement. -->
+  <PropertyGroup Condition="'$(DisableBatchMeasurement)' == 'true'">
+    <DefineConstants>$(DefineConstants);DISABLE_BATCH_MEASUREMENT</DefineConstants>
+  </PropertyGroup>
+
   <!-- Navisworks Manage 2023 API references. The install directory is configurable. -->
   <ItemGroup>
     <Reference Include="Autodesk.Navisworks.Api">
@@ -103,7 +108,17 @@
     <Compile Include="DiagnosticLogExtensions.cs" />
     <Compile Include="LogService.cs" />
     <Compile Include="PluginEntry.cs" />
+    <Compile Include="UiTheme.cs" />
     <Compile Include="SearchDialog.cs" />
+    <Compile Include="SearchDialog.Measurement.cs" />
+    <Compile Include="TrayMeasurement\Geometry.cs" />
+    <Compile Include="TrayMeasurement\GeometryReader.cs" />
+    <Compile Include="TrayMeasurement\MeasurementBatchPolicy.cs" />
+    <Compile Include="TrayMeasurement\MeasurementSource.cs" />
+    <Compile Include="TrayMeasurement\BatchMeasurementForm.cs" />
+    <Compile Include="TrayMeasurement\MeasurementWidgets.cs" />
+    <Compile Include="TrayMeasurement\SingleMeasurementForm.cs" />
+    <Compile Include="TrayMeasurement\SingleMeasurementPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
 

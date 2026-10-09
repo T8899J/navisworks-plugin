@@ -5,6 +5,19 @@ namespace JiePinPai.Navisworks
 {
     public static class DuplicateMatchInclusionPolicy
     {
+        public static HashSet<int> SetInclusion(
+            IEnumerable<int> includedResultIds,
+            IEnumerable<int> targetDuplicateResultIds,
+            bool included)
+        {
+            var result = new HashSet<int>(includedResultIds ?? Array.Empty<int>());
+            if (included)
+                result.UnionWith(targetDuplicateResultIds ?? Array.Empty<int>());
+            else
+                result.ExceptWith(targetDuplicateResultIds ?? Array.Empty<int>());
+            return result;
+        }
+
         public static List<T> ResolveEffectiveItems<T>(
             IEnumerable<T> foundItems,
             IReadOnlyDictionary<int, IReadOnlyList<T>> duplicateItemsByResult,

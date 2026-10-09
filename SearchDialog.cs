@@ -31,38 +31,60 @@ namespace JiePinPai.Navisworks
         private Button _btnUsageGuide;
 
         // ── 模块 2：选项 ──
-        private CheckBox _chkHideAfterSearch;
-        private CheckBox _chkTestMode;
+        private RadioButton _chkHideAfterSearch;
+        private RadioButton _chkTestMode;
         private CheckBox _chkDiagnosticLog;
 
         // ── 模块 4：结果（搜索后显示） ──
         private Label _lblResultSummary;
+        private string _resultsEmptyMessage;
+        private FlowLayoutPanel _matchActionsPanel;
         private Label _lblExportSelection;
-        private Button _btnRestoreSelection;
+        private Label _lblDuplicateInclusion;
+        private ThemedButton _btnToggleDuplicateInclusion;
+        private ThemedButton _btnRestoreSelection;
         private FlowLayoutPanel _resultFilterPanel;
+        private SearchBox _resultSearchBox;
+        private TableLayoutPanel _resultFilterRow;
+        private string _resultSearchText = string.Empty;
         private DataGridView _resultsGrid;
         private SearchResultFilter _activeResultFilter = SearchResultFilter.All;
-        private Button _btnSearch;
-        private Button _btnExportResults;
-        private Button _btnCreateSelectionSet;
-        private Button _btnHideUnselected;
-        private Button _btnClose;
-        private ContextMenuStrip _exportResultsMenu;
-        private ToolStripMenuItem _exportCheckedMenuItem;
-        private ToolStripMenuItem _exportFilteredMenuItem;
-        private ToolStripMenuItem _exportAllMenuItem;
+        private ThemedButton _btnSearch;
+        private ThemedButton _btnExportResults;
+        private ThemedButton _btnCreateSelectionSet;
+        private ThemedButton _btnHideUnselected;
+        private ThemedButton _btnClose;
 
         // ── 公共操作按钮 ──
         private TabControl _tabControl;
         private TabPage _tabConditions;
         private TabPage _tabOptions;
         private TabPage _tabResults;
+        private NavTab _navConditions;
+        private NavTab _navResults;
+        private NavTab _navOptions;
+        private Control _lblHeaderTitle;
+        private Label _lblHeaderSubtitle;
+        private ThemedButton _btnMode;
+        // 同一时间只有一个浮动面板；记录刚关闭的锚点，避免“点按钮收起”被当成再次打开。
+        private OptionPicker _activePicker;
+        private Control _activePickerAnchor;
+        private Control _lastPickerAnchor;
+        private DateTime _pickerClosedAt = DateTime.MinValue;
+        private ToastWindow _toast;
+        private Panel _header;
+        private NavIndicator _navIndicator;
+        private PageTransition _pageTransition;
+        private bool _fadeInOnShow;
+        private ToolTip _toolTip;
 
         // ── 数据 ──
         private readonly Document _doc;
         private readonly string _initialXmlPath;
         private readonly IntPtr _ownerHandle;
         private List<SearchCondition> _conditions;
+        // 手动添加、修改、删除后置位；导入或导出后清除。
+        private bool _conditionsDirty;
         private string _currentXmlPath;
 
         // 无模式窗口：记住上次位置（跨重开），缓存搜索选中的全部对象以便还原。
@@ -84,13 +106,14 @@ namespace JiePinPai.Navisworks
         private int _lastFinalKeepCount;
 
         // ── 列索引常量 ──
-        private const int COL_CATEGORY = 0;
-        private const int COL_PROPERTY = 1;
-        private const int COL_TEST = 2;
-        private const int COL_VALUE = 3;
+        private const int COL_INDEX = 0;
+        private const int COL_CATEGORY = 1;
+        private const int COL_PROPERTY = 2;
+        private const int COL_TEST = 3;
+        private const int COL_VALUE = 4;
+        private const int RESULT_COL_STATUS = 3;
         private const int RESULT_COL_EXPORT = 0;
         private const int RESULT_COL_INCLUDE_MATCH = 1;
-        private const int BASE_DPI = 96;
         private static readonly Regex ModelPrefixRegex =
             new Regex(@"^(TS-M[0-9A-Z]+)-", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -104,6 +127,7 @@ namespace JiePinPai.Navisworks
             _ownerHandle = ownerHandle;
             _conditions = new List<SearchCondition>();
             InitializeComponent();
+            InitializeMeasurementLink();
             TryLoadInitialXml();
             RefreshConditionsGrid();
         }
@@ -118,280 +142,523 @@ namespace JiePinPai.Navisworks
 
         private void InitializeComponent()
         {
-            this.Text = "傑出品";
-            this.Size = new Size(ScaleLogical(960), ScaleLogical(680));
-            this.MinimumSize = new Size(ScaleLogical(760), ScaleLogical(540));
+            this.Text = "Curi · 傑出品";
+            this.Size = new Size(ScaleLogical(980), ScaleLogical(700));
+            this.MinimumSize = new Size(ScaleLogical(780), ScaleLogical(560));
             // 无模式窗口：手动定位到 Navisworks 主窗口右上角（见 PositionForModeless）。
             this.StartPosition = FormStartPosition.Manual;
-            this.Font = new Font("Microsoft YaHei UI", 9F);
-            this.BackColor = System.Drawing.Color.FromArgb(245, 247, 250);
+            this.Font = UiTheme.BodyFont;
+            this.BackColor = UiTheme.Canvas;
+            this.ForeColor = UiTheme.TextBody;
+            this.DoubleBuffered = true;
             this.Icon = null;
+            _toolTip = new ToolTip { InitialDelay = 400, ReshowDelay = 100, AutoPopDelay = 8000 };
 
-            // ── TabControl ──
-            _tabControl = new TabControl
+            // 系统页签条隐藏，由页头 NavTab 驱动切换。
+            _tabControl = new HeaderlessTabControl
             {
                 Dock = DockStyle.Fill,
-                Padding = new Point(ScaleLogical(12), ScaleLogical(6)),
-                Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-                SizeMode = TabSizeMode.Normal,
+                Margin = new Padding(0),
             };
-
-            // ========== 选项卡 1：搜索条件 ==========
-            _tabConditions = new TabPage("搜索条件");
-            _tabConditions.BackColor = this.BackColor;
-            _tabConditions.Padding = new Padding(ScaleLogical(8));
+            _tabConditions = CreateTabPage("搜索条件");
+            _tabResults = CreateTabPage("结果");
+            _tabOptions = CreateTabPage("选项");
             BuildConditionsTab();
-
-            // ========== 选项卡 2：选项 ==========
-            _tabOptions = new TabPage("选项");
-            _tabOptions.BackColor = this.BackColor;
-            _tabOptions.Padding = new Padding(ScaleLogical(8));
-            BuildOptionsTab();
-
-            // ========== 选项卡 3：结果 ==========
-            _tabResults = new TabPage("结果");
-            _tabResults.BackColor = this.BackColor;
-            _tabResults.Padding = new Padding(ScaleLogical(8));
             BuildResultsTab();
-
+            BuildOptionsTab();
             _tabControl.TabPages.Add(_tabConditions);
-            _tabControl.TabPages.Add(_tabOptions);
             _tabControl.TabPages.Add(_tabResults);
+            _tabControl.TabPages.Add(_tabOptions);
 
-            // ── 底部按钮面板 ──
-            var bottomPanel = new Panel
+            Control header = BuildHeader();
+            Control footer = BuildFooter();
+
+            // Dock 按集合逆序计算：Fill 必须最先加入。
+            this.Controls.Add(_tabControl);
+            this.Controls.Add(header);
+            this.Controls.Add(footer);
+            this.CancelButton = _btnClose;
+
+            // 浮动提示：独立的圆角小窗，真实淡入淡出；位于页脚上方居中。
+            _toast = new ToastWindow(this, UiTheme.ControlHeight + ScaleLogical(24) + 1 + ScaleLogical(16));
+
+            ApplyTooltips();
+
+            _tabControl.SelectedIndexChanged += (s, e) => UpdateNavState();
+            // 切到结果页即聚焦搜索框，直接输入编号即可查找。
+            _tabControl.SelectedIndexChanged += (s, e) =>
             {
-                Dock = DockStyle.Bottom,
-                Height = CalculatePanelHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Bold), 44),
-                Padding = new Padding(ScaleLogical(12)),
-                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
+                if (_tabControl.SelectedTab == _tabResults && _lastResults != null)
+                    BeginInvoke(new Action(() => _resultSearchBox.FocusAndSelectAll()));
+            };
+            _tabControl.HandleCreated += (s, e) => UpdateNavState();
+            this.Shown += (s, e) =>
+            {
+                UpdateNavState();
+                UpdateNavIndicator(animate: false);
+            };
+            _tabControl.EnabledChanged += (s, e) => UpdateNavState();
+            UpdateNavState();
+            UpdateModeHint();
+        }
+
+        private TabPage CreateTabPage(string text)
+        {
+            return new TabPage(text)
+            {
+                BackColor = UiTheme.Canvas,
+                Padding = new Padding(ScaleLogical(20), ScaleLogical(16), ScaleLogical(20), ScaleLogical(16)),
+                Margin = new Padding(0),
+            };
+        }
+
+        /// <summary>在页脚上方居中显示一条短暂提示，数秒后自动淡出。</summary>
+        private void ShowToast(string message)
+        {
+            if (_toast == null || _toast.IsDisposed || IsDisposed)
+                return;
+            _toast.ShowMessage(message);
+        }
+
+        private void ApplyTooltips()
+        {
+            void Tip(Control control, string text) => _toolTip.SetToolTip(control, text);
+            Tip(_btnImportXml, "载入 XML 查找文件，替换当前条件（也可直接把文件拖进窗口）");
+            Tip(_btnExportXml, "把当前条件保存为 XML，下次可直接导入");
+            Tip(_btnAddCondition, "手动添加一条条件");
+            Tip(_btnDeleteCondition, "删除选中的条件，可多选（Delete）");
+            Tip(_btnClearConditions, "删除全部条件");
+            Tip(_btnUsageGuide, "四步上手指南");
+            Tip(_btnSearch, "在选择树选中的范围内查找（Ctrl+Enter）");
+            Tip(_btnMode, "切换搜索模式：仅选中，或选中后确认隐藏");
+            Tip(_btnExportResults, "把结果清单导出为 CSV / TXT");
+            Tip(_btnCreateSelectionSet, "把匹配对象保存为 Navisworks 选择集，随 .nwf 保存");
+            Tip(_btnHideUnselected, "隐藏范围内未匹配的对象；可在 Navisworks 常用 → 全部显示 恢复");
+            Tip(_btnRestoreSelection, "查看单个结果后，恢复为本次搜索选中的全部对象");
+            Tip(_resultSearchBox, "输入编号片段即时过滤；Enter 在模型中定位，Esc 清空");
+        }
+
+        /// <summary>
+        /// 页头单行：品牌字标 | 导航页签 …… 条件来源（右对齐）。
+        /// 页签下划线贴合页头底边分隔线。
+        /// </summary>
+        private Control BuildHeader()
+        {
+            _navConditions = CreateNavTab(_tabConditions);
+            _navResults = CreateNavTab(_tabResults);
+            _navOptions = CreateNavTab(_tabOptions);
+            int rowHeight = _navConditions.Height;
+
+            // 品牌字标：“Curi”（创造 Create + 好奇 Curious）+ 强调色圆点，自绘以精确控制字距。
+            var brand = new BrandMark("Curi")
+            {
+                Anchor = AnchorStyles.Left,
+                Margin = new Padding(0, 0, 0, ScaleLogical(3)),
+            };
+            _lblHeaderTitle = brand;
+
+            var divider = new Panel
+            {
+                Width = 1,
+                Height = UiTheme.TextHeight(UiTheme.BodyFont),
+                Anchor = AnchorStyles.Left,
+                BackColor = UiTheme.Border,
+                Margin = new Padding(ScaleLogical(20), 0, ScaleLogical(24), ScaleLogical(3)),
             };
 
-            var btnFont = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
-            var btnHeight = CalculateButtonHeight(btnFont);
+            var nav = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Anchor = AnchorStyles.Left | AnchorStyles.Bottom,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = UiTheme.Surface,
+            };
+            nav.Controls.AddRange(new Control[] { _navConditions, _navResults, _navOptions });
 
-            _btnSearch = new Button
+            _lblHeaderSubtitle = new Label
+            {
+                Dock = DockStyle.Fill,
+                AutoSize = false,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleRight,
+                ForeColor = UiTheme.TextMuted,
+                Margin = new Padding(ScaleLogical(16), 0, 0, ScaleLogical(3)),
+            };
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 5,
+                RowCount = 1,
+                BackColor = UiTheme.Surface,
+                Padding = new Padding(ScaleLogical(20), 0, ScaleLogical(20), 0),
+                Margin = new Padding(0),
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, rowHeight));
+            layout.Controls.Add(brand, 0, 0);
+            layout.Controls.Add(divider, 1, 0);
+            layout.Controls.Add(nav, 2, 0);
+            layout.Controls.Add(_lblHeaderSubtitle, 3, 0);
+            _btnTrayMeasurement = MakeToolButton("桥架测量 ▾", ToggleMeasurementPicker);
+            _btnTrayMeasurement.Anchor = AnchorStyles.Right;
+            _btnTrayMeasurement.Margin = new Padding(ScaleLogical(16), 0, 0, ScaleLogical(3));
+            layout.Controls.Add(_btnTrayMeasurement, 4, 0);
+
+            var header = new Panel
+            {
+                Dock = DockStyle.Top,
+                BackColor = UiTheme.Surface,
+                Height = rowHeight + ScaleLogical(8) + 1,
+                Padding = new Padding(0, ScaleLogical(8), 0, 0),
+            };
+            header.Controls.Add(layout);
+            header.Controls.Add(CreateHairline(DockStyle.Bottom));
+
+            // 导航下划线：独立控件，在页签间滑动。
+            _header = header;
+            _navIndicator = new NavIndicator();
+            header.Controls.Add(_navIndicator);
+            _navIndicator.BringToFront();
+            nav.Layout += (s, e) => UpdateNavIndicator(animate: false);
+            header.Resize += (s, e) => UpdateNavIndicator(animate: false);
+            return header;
+        }
+
+        private void UpdateNavIndicator(bool animate)
+        {
+            if (_navIndicator == null || !_header.IsHandleCreated)
+                return;
+            TabPage selected = _tabControl.SelectedTab ?? _tabConditions;
+            NavTab tab = selected == _tabResults ? _navResults
+                : selected == _tabOptions ? _navOptions
+                : _navConditions;
+            if (!tab.IsHandleCreated)
+                return;
+            Point origin = _header.PointToClient(tab.PointToScreen(Point.Empty));
+            int barHeight = _navIndicator.Height;
+            _navIndicator.Enabled = _tabControl.Enabled;
+            _navIndicator.MoveTo(
+                new Rectangle(origin.X, _header.Height - 1 - barHeight, tab.Width, barHeight),
+                animate);
+        }
+
+        /// <summary>
+        /// 切换页面：截取前后画面做交叉淡入（新页面轻微上移），窗口不可见或半透明时直接切换。
+        /// </summary>
+        private void SwitchTab(TabPage page)
+        {
+            if (page == null || _tabControl.SelectedTab == page)
+                return;
+            _pageTransition?.Finish();
+            _pageTransition = null;
+
+            bool animate = IsHandleCreated && Visible && Opacity >= 0.99
+                && WindowState != FormWindowState.Minimized;
+            Bitmap from = animate ? PageTransition.Snapshot(_tabControl) : null;
+            _tabControl.SelectedTab = page;
+            if (from == null)
+                return;
+            page.PerformLayout();
+            Bitmap to = PageTransition.Snapshot(_tabControl);
+            _pageTransition = PageTransition.Play(_tabControl, from, to);
+        }
+
+        private NavTab CreateNavTab(TabPage page)
+        {
+            var tab = new NavTab { Text = page.Text };
+            tab.Click += (s, e) =>
+            {
+                if (_tabControl.Enabled)
+                    SwitchTab(page);
+            };
+            return tab;
+        }
+
+        private static Control CreateHairline(DockStyle dock)
+        {
+            return new Panel { Dock = dock, Height = 1, BackColor = UiTheme.Border };
+        }
+
+        /// <summary>页脚：主操作在左，结果操作靠右，关闭独立。</summary>
+        private Control BuildFooter()
+        {
+            _btnSearch = new ThemedButton(ButtonKind.Primary)
             {
                 Text = "执行搜索",
-                Dock = DockStyle.Fill,
-                BackColor = System.Drawing.Color.FromArgb(37, 99, 235),
-                ForeColor = System.Drawing.Color.White,
-                FlatStyle = FlatStyle.Flat,
-                FlatAppearance =
-                {
-                    BorderSize = 0,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(29, 78, 216),
-                },
-                Font = btnFont,
-                UseVisualStyleBackColor = false,
+                MinimumSize = new Size(ScaleLogical(116), UiTheme.ControlHeight),
+                Margin = new Padding(0),
             };
             _btnSearch.Click += BtnSearch_Click;
 
-            _btnExportResults = new Button
+            // 搜索模式：与导出结果同样的下拉按钮样式，一眼可知可点击；紧邻执行搜索，表明它决定搜索行为。
+            _btnMode = new ThemedButton(ButtonKind.Secondary)
+            {
+                Margin = new Padding(ScaleLogical(8), 0, 0, 0),
+            };
+            _btnMode.Click += (s, e) => ToggleModePicker();
+
+            _btnExportResults = new ThemedButton(ButtonKind.Secondary)
             {
                 Text = "导出结果 ▾",
-                Dock = DockStyle.Fill,
-                FlatStyle = FlatStyle.Flat,
-                FlatAppearance =
-                {
-                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
-                    BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(239, 246, 255),
-                },
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Font = btnFont,
-                UseVisualStyleBackColor = false,
                 Enabled = false,
             };
             _btnExportResults.Click += BtnExportResults_Click;
 
-            _exportResultsMenu = new ContextMenuStrip
-            {
-                Font = new Font("Microsoft YaHei UI", 9F),
-                ShowImageMargin = false,
-            };
-            _exportCheckedMenuItem = new ToolStripMenuItem();
-            _exportFilteredMenuItem = new ToolStripMenuItem();
-            _exportAllMenuItem = new ToolStripMenuItem();
-            _exportCheckedMenuItem.Click +=
-                (menuSender, menuArgs) => ExportResults(ResultExportScope.Checked);
-            _exportFilteredMenuItem.Click +=
-                (menuSender, menuArgs) => ExportResults(ResultExportScope.CurrentFilter);
-            _exportAllMenuItem.Click +=
-                (menuSender, menuArgs) => ExportResults(ResultExportScope.All);
-            _exportResultsMenu.Items.AddRange(new ToolStripItem[]
-            {
-                _exportCheckedMenuItem,
-                _exportFilteredMenuItem,
-                new ToolStripSeparator(),
-                _exportAllMenuItem,
-            });
-
-            _btnCreateSelectionSet = new Button
+            _btnCreateSelectionSet = new ThemedButton(ButtonKind.Secondary)
             {
                 Text = "创建选择集",
-                Dock = DockStyle.Fill,
-                FlatStyle = FlatStyle.Flat,
-                FlatAppearance =
-                {
-                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
-                    BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(239, 246, 255),
-                },
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Font = btnFont,
-                UseVisualStyleBackColor = false,
                 Enabled = false,
             };
             _btnCreateSelectionSet.Click += BtnCreateSelectionSet_Click;
 
-            _btnHideUnselected = new Button
+            _btnHideUnselected = new ThemedButton(ButtonKind.Danger)
             {
                 Text = "隐藏未选中",
-                Dock = DockStyle.Fill,
-                FlatStyle = FlatStyle.Flat,
-                FlatAppearance =
-                {
-                    BorderColor = System.Drawing.Color.FromArgb(220, 38, 38),
-                    BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(254, 242, 242),
-                },
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(185, 28, 28),
-                Font = btnFont,
-                UseVisualStyleBackColor = false,
                 Enabled = false,
             };
             _btnHideUnselected.Click += BtnHideUnselected_Click;
 
-            _btnClose = new Button
+            _btnClose = new ThemedButton(ButtonKind.Secondary)
             {
                 Text = "关闭",
-                Dock = DockStyle.Fill,
-                FlatStyle = FlatStyle.Flat,
-                FlatAppearance =
-                {
-                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
-                    BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(248, 250, 252),
-                },
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Font = btnFont,
-                UseVisualStyleBackColor = false,
                 DialogResult = DialogResult.Cancel,
+                Margin = new Padding(0),
             };
             // 无模式窗口下 DialogResult/CancelButton 不会自动关窗，需显式关闭
             // （Esc 经 CancelButton 也会触发此 Click）。
             _btnClose.Click += (s, e) => this.Close();
 
-            var bottomLayout = new TableLayoutPanel
+            var actions = new FlowLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = UiTheme.Surface,
+            };
+            actions.Controls.AddRange(new Control[]
+            {
+                _btnExportResults,
+                _btnCreateSelectionSet,
+                _btnHideUnselected,
+                UiTheme.CreateDivider(),
+                _btnClose,
+            });
+
+            var layout = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                ColumnCount = 9,
+                ColumnCount = 4,
                 RowCount = 1,
-                Padding = new Padding(0),
+                BackColor = UiTheme.Surface,
+                Padding = new Padding(ScaleLogical(20), ScaleLogical(12), ScaleLogical(20), ScaleLogical(12)),
+                Margin = new Padding(0),
             };
-            var bottomGap = ScaleLogical(12);
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(108)));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, bottomGap));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(84)));
-            bottomLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            bottomLayout.Controls.Add(_btnSearch, 0, 0);
-            bottomLayout.Controls.Add(_btnExportResults, 2, 0);
-            bottomLayout.Controls.Add(_btnCreateSelectionSet, 4, 0);
-            bottomLayout.Controls.Add(_btnHideUnselected, 6, 0);
-            bottomLayout.Controls.Add(_btnClose, 8, 0);
-            bottomPanel.Controls.Add(bottomLayout);
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            layout.Controls.Add(_btnSearch, 0, 0);
+            layout.Controls.Add(_btnMode, 1, 0);
+            layout.Controls.Add(actions, 3, 0);
 
-            // ── 主布局 ──
-            this.Controls.Add(_tabControl);
-            this.Controls.Add(bottomPanel);
-            this.CancelButton = _btnClose;
+            var footer = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                BackColor = UiTheme.Surface,
+                Height = UiTheme.ControlHeight + layout.Padding.Vertical + 1,
+            };
+            footer.Controls.Add(layout);
+            footer.Controls.Add(CreateHairline(DockStyle.Top));
+            return footer;
+        }
+
+        private void UpdateNavState()
+        {
+            if (_navConditions == null)
+                return;
+            bool enabled = _tabControl.Enabled;
+            foreach (NavTab tab in new[] { _navConditions, _navResults, _navOptions })
+                tab.Enabled = enabled;
+            // 句柄创建前 SelectedIndex 可能为 -1，此时按首页处理。
+            TabPage selected = _tabControl.SelectedTab ?? _tabConditions;
+            _navConditions.Active = selected == _tabConditions;
+            _navResults.Active = selected == _tabResults;
+            _navOptions.Active = selected == _tabOptions;
+            UpdateNavIndicator(animate: true);
+        }
+
+        private void UpdateNavCaptions()
+        {
+            if (_navConditions == null)
+                return;
+            _navConditions.Text = _conditions.Count > 0
+                ? $"搜索条件  {_conditions.Count}"
+                : "搜索条件";
+            int resultCount = _lastResults?.Count ?? 0;
+            _navResults.Text = resultCount > 0 ? $"结果  {resultCount}" : "结果";
+
+            // 仅在导入 XML 后显示来源文件名；手动条件不标注。
+            _lblHeaderSubtitle.Text = string.IsNullOrEmpty(_currentXmlPath)
+                ? string.Empty
+                : Path.GetFileName(_currentXmlPath);
+        }
+
+        /// <summary>搜索模式面板：上方浮出，标题 + 说明两行，当前模式高亮。</summary>
+        private OptionPicker BuildModePicker()
+        {
+            var picker = new OptionPicker(
+                "搜索模式",
+                new[]
+                {
+                    new PickerOption("仅选中", "只选中匹配对象，不改变模型可见性", "推荐"),
+                    new PickerOption("选中并隐藏", "选中后弹窗确认，再隐藏范围内其余对象"),
+                },
+                _chkHideAfterSearch.Checked ? 1 : 0);
+            picker.Chosen += (s, index) =>
+            {
+                if (index == 0)
+                    _chkTestMode.Checked = true;
+                else
+                    _chkHideAfterSearch.Checked = true;
+            };
+            return picker;
+        }
+
+        private void ToggleModePicker()
+        {
+            TogglePicker(_btnMode, BuildModePicker, alignRight: false, afterClose: null);
         }
 
         /// <summary>
-        /// 创建工具栏按钮：单元格决定尺寸，支持 DPI 缩放。
+        /// 打开或收起锚定在按钮上的浮动面板。afterClose 在面板完全关闭后执行，
+        /// 用于会弹出文件对话框等的动作，避免与关闭动画抢焦点。
         /// </summary>
-        private static Button MakeToolButton(string text, EventHandler onClick)
+        private void TogglePicker(
+            ThemedButton anchor,
+            Func<OptionPicker> build,
+            bool alignRight,
+            Action<int> afterClose,
+            bool openBelow = false)
         {
-            var btn = new Button
+            if (!_tabControl.Enabled || !anchor.Enabled)
+                return;
+            // 面板失焦关闭发生在按钮点击之前：刚因这次点击关闭的面板不再重开。
+            if (_activePicker != null
+                || (ReferenceEquals(_lastPickerAnchor, anchor)
+                    && (DateTime.UtcNow - _pickerClosedAt).TotalMilliseconds < 250))
+                return;
+
+            OptionPicker picker = build();
+            _activePicker = picker;
+            _activePickerAnchor = anchor;
+            anchor.Active = true;
+            UpdatePickerArrows();
+            picker.FormClosed += (s, e) =>
             {
-                Text = text,
-                Dock = DockStyle.Fill,
-                AutoSize = false,
-                MinimumSize = new Size(ScaleLogical(80), 0),
-                FlatStyle = FlatStyle.Flat,
-                FlatAppearance =
-                {
-                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
-                    BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(239, 246, 255),
-                    MouseDownBackColor = System.Drawing.Color.FromArgb(219, 234, 254),
-                },
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular),
-                UseVisualStyleBackColor = false,
-                Margin = new Padding(ScaleLogical(4)),
+                _activePicker = null;
+                _activePickerAnchor = null;
+                _lastPickerAnchor = anchor;
+                _pickerClosedAt = DateTime.UtcNow;
+                if (anchor.IsDisposed)
+                    return;
+                anchor.Active = false;
+                UpdatePickerArrows();
+                int chosen = picker.ChosenIndex;
+                if (afterClose != null && chosen >= 0)
+                    BeginInvoke(new Action(() => afterClose(chosen)));
             };
-            btn.Height = CalculateButtonHeight(btn.Font);
-            btn.MinimumSize = new Size(btn.MinimumSize.Width, btn.Height);
+            picker.ShowNear(anchor, this, alignRight, openBelow);
+        }
+
+        private void UpdatePickerArrows()
+        {
+            UpdateModeHint();
+            if (_btnTrayMeasurement != null)
+                _btnTrayMeasurement.Text = ReferenceEquals(_activePickerAnchor, _btnTrayMeasurement)
+                    ? "桥架测量 ▴" : "桥架测量 ▾";
+            if (_btnExportResults != null)
+            {
+                _btnExportResults.Text = ReferenceEquals(_activePickerAnchor, _btnExportResults)
+                    ? "导出结果 ▴"
+                    : "导出结果 ▾";
+            }
+        }
+
+        /// <summary>导出面板：三种范围及各自条数；没有可导出条目的范围禁用并说明原因。</summary>
+        private OptionPicker BuildExportPicker()
+        {
+            List<int> allIds = (_lastResults ?? new List<SearchResult>())
+                .Where(result => result?.Condition != null)
+                .Select(result => result.Condition.DisplayIndex)
+                .ToList();
+            int visibleCount = GetCurrentFilteredResults().Count;
+            int checkedCount = _checkedExportResultIndices.Count;
+            bool filtered = visibleCount != allIds.Count;
+
+            return new OptionPicker(
+                "导出结果为 CSV / TXT",
+                new[]
+                {
+                    new PickerOption(
+                        "导出已勾选",
+                        checkedCount > 0 ? "导出列中勾选的条件" : "先在结果表格的导出列中勾选条件",
+                        checkedCount.ToString(),
+                        checkedCount > 0),
+                    new PickerOption(
+                        "导出当前筛选",
+                        filtered ? "当前筛选与搜索下可见的结果" : "当前未筛选，与全部结果相同",
+                        visibleCount.ToString(),
+                        visibleCount > 0),
+                    new PickerOption(
+                        "导出全部结果",
+                        "本次搜索的全部条件",
+                        allIds.Count.ToString(),
+                        allIds.Count > 0),
+                },
+                -1);
+        }
+
+        private void UpdateModeHint()
+        {
+            if (_btnMode == null || _chkHideAfterSearch == null)
+                return;
+            // 按钮上只写简短模式名，完整说明在面板里；展开时箭头朝上。
+            string arrow = ReferenceEquals(_activePickerAnchor, _btnMode) ? "▴" : "▾";
+            _btnMode.Text = (_chkHideAfterSearch.Checked ? "模式：选中并隐藏 " : "模式：仅选中 ") + arrow;
+        }
+
+        /// <summary>
+        /// 创建工具栏按钮，统一高度并支持 DPI 缩放。
+        /// </summary>
+        private static ThemedButton MakeToolButton(
+            string text,
+            EventHandler onClick,
+            ButtonKind kind = ButtonKind.Secondary)
+        {
+            var btn = new ThemedButton(kind) { Text = text };
             btn.Click += onClick;
             return btn;
         }
 
         private static int ScaleLogical(int logicalPixels)
         {
-            using (var graphics = System.Drawing.Graphics.FromHwnd(IntPtr.Zero))
-            {
-                return (int)Math.Ceiling(logicalPixels * graphics.DpiX / BASE_DPI);
-            }
-        }
-
-        private static int MeasureTextHeight(Font font)
-        {
-            return TextRenderer.MeasureText("中文Ag", font).Height;
+            return UiTheme.Scale(logicalPixels);
         }
 
         private static int CalculateButtonHeight(Font font)
         {
-            return MeasureTextHeight(font) + ScaleLogical(14);
-        }
-
-        private static int CalculateHeaderHeight(Font font)
-        {
-            return MeasureTextHeight(font) + ScaleLogical(10);
-        }
-
-        private static int CalculatePanelHeight(Font font, int logicalVerticalPadding)
-        {
-            return MeasureTextHeight(font) + ScaleLogical(logicalVerticalPadding);
-        }
-
-        private static int CalculateToolbarHeight(Control sampleButton, Padding padding)
-        {
-            return sampleButton.Height + sampleButton.Margin.Vertical + padding.Vertical;
-        }
-
-        private static int CalculateContentHeight(Font font, int lineCount, int logicalVerticalPadding)
-        {
-            return (MeasureTextHeight(font) * lineCount) + ScaleLogical(logicalVerticalPadding);
-        }
-
-        private static void ApplyGridHeaderLayout(DataGridView grid)
-        {
-            grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
-            grid.ColumnHeadersHeight = CalculateHeaderHeight(
-                grid.ColumnHeadersDefaultCellStyle.Font ?? grid.Font);
+            return UiTheme.TextHeight(font) + ScaleLogical(14);
         }
 
         private void TryLoadInitialXml()
@@ -421,56 +688,193 @@ namespace JiePinPai.Navisworks
         {
             _tabConditions.SuspendLayout();
 
-            // 工具栏：DPI 自适应等宽按钮
-            var toolStrip = new TableLayoutPanel
-            {
-                Height = CalculatePanelHeight(new Font("Microsoft YaHei UI", 9F, FontStyle.Regular), 20),
-                Dock = DockStyle.Top,
-                RowCount = 1,
-                Padding = new Padding(ScaleLogical(6)),
-                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
-            };
-            for (int i = 0; i < 6; i++)
-                toolStrip.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / 6F));
-
-            _btnImportXml = MakeToolButton("导入", BtnImportXml_Click);
-            _btnExportXml = MakeToolButton("导出", BtnExportXml_Click);
-            _btnAddCondition = MakeToolButton("添加", BtnAddCondition_Click);
+            _btnAddCondition = MakeToolButton("＋ 添加", BtnAddCondition_Click);
             _btnDeleteCondition = MakeToolButton("删除", BtnDeleteCondition_Click);
-            _btnClearConditions = MakeToolButton("清空", (s, e) =>
-            {
-                _conditions.Clear();
-                RefreshConditionsGrid();
-                InvalidateSearchResults("条件已清空，请添加条件后重新执行搜索。");
-            });
-            _btnUsageGuide = MakeToolButton("使用说明", BtnUsageGuide_Click);
+            _btnClearConditions = MakeToolButton("清空", BtnClearConditions_Click);
+            _btnImportXml = MakeToolButton("导入 XML", BtnImportXml_Click);
+            _btnExportXml = MakeToolButton("导出 XML", BtnExportXml_Click);
+            _btnUsageGuide = MakeToolButton("？ 使用说明", BtnUsageGuide_Click, ButtonKind.Ghost);
+            _btnUsageGuide.Margin = new Padding(0);
 
-            toolStrip.Controls.Add(_btnImportXml, 0, 0);
-            toolStrip.Controls.Add(_btnExportXml, 1, 0);
-            toolStrip.Controls.Add(_btnAddCondition, 2, 0);
-            toolStrip.Controls.Add(_btnDeleteCondition, 3, 0);
-            toolStrip.Controls.Add(_btnClearConditions, 4, 0);
-            toolStrip.Controls.Add(_btnUsageGuide, 5, 0);
-            toolStrip.Height = CalculateToolbarHeight(_btnImportXml, toolStrip.Padding);
-
-            // ── 搜索条件表格：逐步构建确保列标题可见 ──
-            _conditionsGrid = CreateSearchGrid();
-            _conditionsGrid.CellDoubleClick += ConditionsGrid_CellDoubleClick;
-            _conditionsGrid.KeyDown += (s, e) =>
+            // 分组：导入/导出（数据进出）| 添加/删除/清空（逐条编辑）。
+            var editGroup = new FlowLayoutPanel
             {
-                if (e.KeyCode == Keys.Delete) BtnDeleteCondition_Click(null, null);
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                WrapContents = false,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
             };
+            editGroup.Controls.AddRange(new Control[]
+            {
+                _btnImportXml,
+                _btnExportXml,
+                UiTheme.CreateDivider(),
+                _btnAddCondition,
+                _btnDeleteCondition,
+                _btnClearConditions,
+            });
 
-            var gridHost = new Panel
+            var toolbar = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
-                BackColor = System.Drawing.Color.White,
-                Padding = new Padding(ScaleLogical(6), 0, ScaleLogical(6), ScaleLogical(6)),
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 2,
+                RowCount = 1,
+                Margin = new Padding(0, 0, 0, ScaleLogical(12)),
+                Padding = new Padding(0),
             };
-            gridHost.Controls.Add(_conditionsGrid);
-            _tabConditions.Controls.Add(gridHost);
-            _tabConditions.Controls.Add(toolStrip);
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            toolbar.Controls.Add(editGroup, 0, 0);
+            toolbar.Controls.Add(_btnUsageGuide, 1, 0);
+
+            _conditionsGrid = CreateSearchGrid();
+            _conditionsGrid.Margin = new Padding(1);
+            _conditionsGrid.MultiSelect = true;
+            _conditionsGrid.CellDoubleClick += ConditionsGrid_CellDoubleClick;
+            _conditionsGrid.SelectionChanged += (s, e) => UpdateConditionActionState();
+            _conditionsGrid.KeyDown += ConditionsGrid_KeyDown;
+            _conditionsGrid.CellMouseDown += (s, e) =>
+            {
+                // 右键点在未选中的行上时，先选中该行再弹菜单。
+                if (e.Button == MouseButtons.Right && e.RowIndex >= 0
+                    && !_conditionsGrid.Rows[e.RowIndex].Selected)
+                {
+                    _conditionsGrid.ClearSelection();
+                    _conditionsGrid.CurrentCell = _conditionsGrid.Rows[e.RowIndex].Cells[COL_VALUE];
+                }
+            };
+            _conditionsGrid.ContextMenuStrip = BuildConditionsMenu();
+            UiTheme.AttachEmptyState(_conditionsGrid, () =>
+                "还没有搜索条件\n\n点击导入 XML 载入查找文件，或点击添加手动填写一条\n也可以直接把 XML 文件拖进窗口", UiTheme.EmptyIcon.Document);
+
+            // 支持把 XML 文件直接拖进窗口导入。
+            this.AllowDrop = true;
+            this.DragEnter += (s, e) =>
+            {
+                e.Effect = GetDroppedXmlPath(e.Data) != null && _tabControl.Enabled
+                    ? DragDropEffects.Copy
+                    : DragDropEffects.None;
+            };
+            this.DragDrop += (s, e) =>
+            {
+                string path = GetDroppedXmlPath(e.Data);
+                if (path == null || !ConfirmDiscardUnsavedConditions("导入会替换当前全部条件。"))
+                    return;
+                try
+                {
+                    LoadFromXml(path);
+                    SwitchTab(_tabConditions);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show(this, "导入 XML 失败：\n" + ex.Message,
+                        "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            };
+
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 2,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = UiTheme.Canvas,
+            };
+            root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            root.Controls.Add(toolbar, 0, 0);
+            root.Controls.Add(_conditionsGrid, 0, 1);
+            UiTheme.AttachHairlineBorder(root, _conditionsGrid);
+
+            _tabConditions.Controls.Add(root);
             _tabConditions.ResumeLayout(true);
+        }
+
+        private void BtnClearConditions_Click(object sender, EventArgs e)
+        {
+            if (_conditions.Count == 0)
+                return;
+            if (MessageBox.Show(this,
+                    $"确定清空全部 {_conditions.Count} 条搜索条件吗？此操作不可撤销。",
+                    "傑出品·清空条件",
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button2) != DialogResult.OK)
+                return;
+
+            _conditions.Clear();
+            _conditionsDirty = false;
+            RefreshConditionsGrid();
+            InvalidateSearchResults("条件已清空，请添加条件后重新执行搜索。");
+        }
+
+        private void ConditionsGrid_KeyDown(object sender, KeyEventArgs e)
+        {
+            switch (e.KeyData)
+            {
+                case Keys.Delete:
+                    BtnDeleteCondition_Click(null, null);
+                    break;
+                case Keys.Enter:
+                case Keys.F2:
+                    EditSelectedCondition();
+                    break;
+                case Keys.Control | Keys.D:
+                    DuplicateSelectedConditions();
+                    break;
+                case Keys.Alt | Keys.Up:
+                    MoveSelectedCondition(-1);
+                    break;
+                case Keys.Alt | Keys.Down:
+                    MoveSelectedCondition(1);
+                    break;
+                default:
+                    return;
+            }
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+
+        private ContextMenuStrip BuildConditionsMenu()
+        {
+            var menu = new ContextMenuStrip { Font = UiTheme.BodyFont, ShowImageMargin = false };
+            var edit = new ToolStripMenuItem("编辑", null, (s, e) => EditSelectedCondition()) { ShortcutKeyDisplayString = "Enter" };
+            var copy = new ToolStripMenuItem("复制一条", null, (s, e) => DuplicateSelectedConditions()) { ShortcutKeyDisplayString = "Ctrl+D" };
+            var up = new ToolStripMenuItem("上移", null, (s, e) => MoveSelectedCondition(-1)) { ShortcutKeyDisplayString = "Alt+↑" };
+            var down = new ToolStripMenuItem("下移", null, (s, e) => MoveSelectedCondition(1)) { ShortcutKeyDisplayString = "Alt+↓" };
+            var delete = new ToolStripMenuItem("删除", null, (s, e) => BtnDeleteCondition_Click(null, null)) { ShortcutKeyDisplayString = "Delete" };
+            var add = new ToolStripMenuItem("添加条件", null, (s, e) => BtnAddCondition_Click(null, null));
+            menu.Items.AddRange(new ToolStripItem[]
+            {
+                edit, copy, new ToolStripSeparator(), up, down, new ToolStripSeparator(), delete, new ToolStripSeparator(), add,
+            });
+            menu.Opening += (s, e) =>
+            {
+                List<int> indices = GetSelectedConditionIndices();
+                bool single = indices.Count == 1;
+                edit.Enabled = single;
+                copy.Enabled = indices.Count > 0;
+                up.Enabled = single && indices[0] > 0;
+                down.Enabled = single && indices[0] < _conditions.Count - 1;
+                delete.Enabled = indices.Count > 0;
+                delete.Text = indices.Count > 1 ? $"删除 {indices.Count} 条" : "删除";
+            };
+            ThemedMenuRenderer.Apply(menu);
+            return menu;
+        }
+
+        private static string GetDroppedXmlPath(IDataObject data)
+        {
+            if (!(data?.GetData(DataFormats.FileDrop) is string[] files) || files.Length != 1)
+                return null;
+            return string.Equals(Path.GetExtension(files[0]), ".xml", StringComparison.OrdinalIgnoreCase)
+                ? files[0]
+                : null;
         }
 
         /// <summary>
@@ -478,203 +882,231 @@ namespace JiePinPai.Navisworks
         /// </summary>
         private DataGridView CreateSearchGrid()
         {
-            var grid = new DataGridView();
-            grid.Dock = DockStyle.Fill;
-            grid.ColumnHeadersVisible = true;
-            grid.AllowUserToAddRows = false;
-            grid.AllowUserToDeleteRows = false;
-            grid.AllowUserToResizeRows = false;
-            grid.ReadOnly = true;
-            grid.RowHeadersVisible = false;
-            grid.MultiSelect = false;
-            grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            grid.BackgroundColor = System.Drawing.Color.White;
-            grid.BorderStyle = BorderStyle.FixedSingle;
-            grid.GridColor = System.Drawing.Color.FromArgb(226, 232, 240);
-            grid.EnableHeadersVisualStyles = false;
-            grid.RowTemplate.Height = CalculateContentHeight(grid.Font, 1, 12);
-            grid.CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal;
-            // 先添加列，再设置 Fill 模式
-            grid.Columns.Add("Category", "分类");
-            grid.Columns.Add("Property", "属性");
-            grid.Columns.Add("Test", "匹配方式");
-            grid.Columns.Add("Value", "查询值");
-            grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            // 列标题样式
-            grid.ColumnHeadersHeight = 24;
-            grid.ColumnHeadersDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(241, 245, 249);
-            grid.ColumnHeadersDefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold);
-            grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-            ApplyGridHeaderLayout(grid);
-            grid.DefaultCellStyle.BackColor = System.Drawing.Color.White;
-            grid.DefaultCellStyle.ForeColor = System.Drawing.Color.FromArgb(51, 65, 85);
-            grid.DefaultCellStyle.Padding = new Padding(ScaleLogical(4), 0, ScaleLogical(4), 0);
-            grid.DefaultCellStyle.SelectionBackColor = System.Drawing.Color.FromArgb(219, 234, 254);
-            grid.DefaultCellStyle.SelectionForeColor = System.Drawing.Color.FromArgb(30, 41, 59);
-            grid.AlternatingRowsDefaultCellStyle.BackColor = System.Drawing.Color.FromArgb(248, 250, 252);
+            var grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                ColumnHeadersVisible = true,
+                AllowUserToAddRows = false,
+                AllowUserToDeleteRows = false,
+                ReadOnly = true,
+                MultiSelect = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+            };
+            UiTheme.StyleGrid(grid);
+            grid.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                Name = "Index",
+                HeaderText = "#",
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
+                Width = ScaleLogical(52),
+                DefaultCellStyle = { ForeColor = UiTheme.TextMuted },
+            });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Category", HeaderText = "分类", FillWeight = 18F });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Property", HeaderText = "属性", FillWeight = 22F });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Test", HeaderText = "匹配方式", FillWeight = 12F });
+            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Value", HeaderText = "查询值", FillWeight = 48F });
             return grid;
         }
 
         private void BuildOptionsTab()
         {
             _tabOptions.SuspendLayout();
+            _tabOptions.AutoScroll = true;
 
-            var optionsLayout = new TableLayoutPanel
+            var card = new TableLayoutPanel
             {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(ScaleLogical(12)),
-                BackColor = this.BackColor,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 1,
-                RowCount = 4,
-            };
-            // GroupBox 开销 = 标题(~20) + 上内边距(14) + 下内边距(8) + 边框(~4) ≈ 44
-            // 行高 = N×行高 + 开销
-            var lineHeight = CalculateContentHeight(this.Font, 1, 4);
-            var groupRowHeight = lineHeight * 2 + ScaleLogical(44);
-            var singleRowHeight = lineHeight + ScaleLogical(44);
-            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, groupRowHeight));
-            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, groupRowHeight));
-            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, singleRowHeight));
-            optionsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-            _chkHideAfterSearch = new CheckBox
-            {
-                Text = "模式 B：查找并选中后，弹窗确认，再执行隐藏未选中",
-                Dock = DockStyle.Fill,
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Checked = false,
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                BackColor = UiTheme.Surface,
+                Padding = new Padding(ScaleLogical(24), ScaleLogical(8), ScaleLogical(24), ScaleLogical(16)),
                 Margin = new Padding(0),
             };
+            card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
-            _chkTestMode = new CheckBox
-            {
-                Text = "模式 A：仅查找并选中，不隐藏",
-                Dock = DockStyle.Fill,
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Checked = true,
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Margin = new Padding(0),
-            };
-
-            _chkHideAfterSearch.CheckedChanged += (s, e) =>
-            {
-                if (_chkHideAfterSearch.Checked)
-                {
-                    _chkTestMode.Checked = false;
-                }
-                else if (!_chkTestMode.Checked)
-                {
-                    _chkTestMode.Checked = true;
-                }
-            };
-            _chkTestMode.CheckedChanged += (s, e) =>
-            {
-                if (_chkTestMode.Checked)
-                {
-                    _chkHideAfterSearch.Checked = false;
-                }
-                else if (!_chkHideAfterSearch.Checked)
-                {
-                    _chkHideAfterSearch.Checked = true;
-                }
-            };
-
-            GroupBox MakeOptionGroup(string title, Control content)
-            {
-                var group = new GroupBox
-                {
-                    Text = title,
-                    Dock = DockStyle.Fill,
-                    Padding = new Padding(ScaleLogical(10), ScaleLogical(14), ScaleLogical(10), ScaleLogical(8)),
-                    ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                    BackColor = this.BackColor,
-                    Margin = new Padding(0, 0, 0, ScaleLogical(8)),
-                };
-                content.Dock = DockStyle.Fill;
-                group.Controls.Add(content);
-                return group;
-            }
-
-            var modePanel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 2,
-            };
-            modePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
-            modePanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
-            modePanel.Controls.Add(_chkTestMode, 0, 0);
-            modePanel.Controls.Add(_chkHideAfterSearch, 0, 1);
-
-            var lblScope = new Label
-            {
-                Text = "搜索范围由 Navisworks 选择树当前选中的节点决定。\r\n" +
-                       "如果没有预先选中范围，执行搜索会拒绝本次操作；不会搜索整个模型。",
-                Dock = DockStyle.Fill,
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = System.Drawing.Color.FromArgb(71, 85, 105),
-            };
+            // 两种模式互斥：用单选按钮表达，而非两个互相联动的复选框。
+            _chkTestMode = MakeOptionRadio("仅选中（推荐）", true);
+            _chkHideAfterSearch = MakeOptionRadio("选中并隐藏", false);
+            _chkHideAfterSearch.CheckedChanged += (s, e) => UpdateModeHint();
 
             _chkDiagnosticLog = new CheckBox
             {
-                Text = "启用诊断日志（每次搜索结束后输出详细诊断文件，用于排查问题）",
-                Dock = DockStyle.Fill,
-                AutoSize = false,
-                TextAlign = ContentAlignment.MiddleLeft,
+                Text = "启用诊断日志",
+                AutoSize = true,
                 Checked = false,
-                ForeColor = System.Drawing.Color.FromArgb(71, 85, 105),
-                Margin = new Padding(0),
+                ForeColor = UiTheme.Text,
+                Margin = new Padding(0, ScaleLogical(10), 0, 0),
             };
 
-            optionsLayout.Controls.Add(MakeOptionGroup("搜索模式", modePanel), 0, 0);
-            optionsLayout.Controls.Add(MakeOptionGroup("搜索范围", lblScope), 0, 1);
-            optionsLayout.Controls.Add(MakeOptionGroup("诊断日志", _chkDiagnosticLog), 0, 2);
-            _tabOptions.Controls.Add(optionsLayout);
-            _tabOptions.ResumeLayout();
+            AddOptionSection(card, "搜索模式", "决定执行搜索后是否继续隐藏未选中的对象。", 1,
+                _chkTestMode,
+                MakeOptionNote("搜索后只选中匹配对象，不改变可见性，适合先核对结果。"),
+                _chkHideAfterSearch,
+                MakeOptionNote("选中后弹窗确认再隐藏；存在未找到、重复或条件异常时会暂停并提示。"));
+            AddOptionSection(card, "搜索范围",
+                "搜索范围由 Navisworks 选择树当前选中的节点决定。\n" +
+                "如果没有预先选中范围，执行搜索会拒绝本次操作；不会搜索整个模型。", 2);
+            AddOptionSection(card, "诊断日志", "每次搜索结束后输出详细诊断文件，仅在排查问题时开启。", 1,
+                _chkDiagnosticLog);
+
+            _tabOptions.Controls.Add(card);
+            UiTheme.AttachHairlineBorder(_tabOptions, card);
+            _tabOptions.ResumeLayout(true);
+        }
+
+        private RadioButton MakeOptionRadio(string text, bool isChecked)
+        {
+            return new RadioButton
+            {
+                Text = text,
+                AutoSize = true,
+                Checked = isChecked,
+                ForeColor = UiTheme.Text,
+                Margin = new Padding(0, ScaleLogical(10), 0, 0),
+            };
+        }
+
+        private Label MakeOptionNote(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                AutoSize = false,
+                AutoEllipsis = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                Height = UiTheme.TextHeight(UiTheme.BodyFont),
+                ForeColor = UiTheme.TextMuted,
+                // 与单选按钮文字左对齐。
+                Margin = new Padding(ScaleLogical(18), ScaleLogical(2), 0, 0),
+            };
+        }
+
+        private void AddOptionSection(
+            TableLayoutPanel card,
+            string title,
+            string description,
+            int descriptionLines,
+            params Control[] content)
+        {
+            if (card.Controls.Count > 0)
+            {
+                var separator = new Panel
+                {
+                    Height = 1,
+                    BackColor = UiTheme.Border,
+                    Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                    Margin = new Padding(0, ScaleLogical(16), 0, 0),
+                };
+                AddOptionRow(card, separator);
+            }
+
+            AddOptionRow(card, new Label
+            {
+                Text = title,
+                Font = UiTheme.BodyStrongFont,
+                ForeColor = UiTheme.Text,
+                AutoSize = true,
+                Margin = new Padding(0, ScaleLogical(16), 0, 0),
+            });
+            AddOptionRow(card, new Label
+            {
+                Text = description,
+                AutoSize = false,
+                AutoEllipsis = true,
+                Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                Height = UiTheme.TextHeight(UiTheme.BodyFont) * descriptionLines,
+                ForeColor = UiTheme.TextMuted,
+                Margin = new Padding(0, ScaleLogical(4), 0, 0),
+            });
+            foreach (Control control in content)
+                AddOptionRow(card, control);
+        }
+
+        private static void AddOptionRow(TableLayoutPanel card, Control control)
+        {
+            card.RowCount += 1;
+            card.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            card.Controls.Add(control, 0, card.RowCount - 1);
         }
 
         private void BuildResultsTab()
         {
             _tabResults.SuspendLayout();
-            int summaryHeight = CalculateContentHeight(this.Font, 2, 24);
-            int filterHeight = CalculateButtonHeight(this.Font) + ScaleLogical(12);
 
             var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 3,
-                Padding = new Padding(ScaleLogical(4)),
-                BackColor = _tabResults.BackColor,
+                RowCount = 4,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = UiTheme.Canvas,
             };
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, summaryHeight));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, filterHeight));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
+            // 摘要：单行文字，位于筛选按钮之上；无结果时整组工具行隐藏。
             _lblResultSummary = new Label
             {
                 Dock = DockStyle.Fill,
-                Padding = new Padding(ScaleLogical(12), ScaleLogical(8), ScaleLogical(12), 0),
-                BackColor = System.Drawing.Color.FromArgb(239, 246, 255),
-                ForeColor = System.Drawing.Color.FromArgb(30, 64, 175),
-                BorderStyle = BorderStyle.FixedSingle,
-                Text = "尚未执行搜索。",
+                AutoSize = false,
+                AutoEllipsis = true,
+                Height = UiTheme.TextHeight(UiTheme.BodyStrongFont),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = UiTheme.BodyStrongFont,
+                ForeColor = UiTheme.Text,
+                BackColor = UiTheme.Canvas,
+                Margin = new Padding(0, 0, 0, ScaleLogical(10)),
             };
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
             _resultFilterPanel = new FlowLayoutPanel
             {
-                Dock = DockStyle.Fill,
+                Anchor = AnchorStyles.Left | AnchorStyles.Top,
                 FlowDirection = FlowDirection.LeftToRight,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 WrapContents = false,
-                Padding = new Padding(0, ScaleLogical(6), 0, 0),
-                BackColor = _tabResults.BackColor,
+                Margin = new Padding(0),
+                Padding = new Padding(0),
+                BackColor = UiTheme.Canvas,
             };
+
+            // 结果内搜索：输入编号或查询值即时过滤，Enter 定位到模型，Esc 清空。
+            _resultSearchBox = new SearchBox("搜索编号或查询值，#12 按序号")
+            {
+                Anchor = AnchorStyles.Right | AnchorStyles.Top,
+                Width = ScaleLogical(260),
+                Margin = new Padding(ScaleLogical(12), 0, 0, 0),
+            };
+            _resultSearchBox.SearchTextChanged += (s, e) =>
+            {
+                _resultSearchText = _resultSearchBox.SearchText;
+                RefreshResultsGrid(_lastResults ?? Enumerable.Empty<SearchResult>());
+                SelectFirstResultRow();
+            };
+            _resultSearchBox.EnterPressed += (s, e) => LocateFirstSearchMatch();
+            _resultSearchBox.DownPressed += (s, e) => _resultsGrid.Focus();
+
+            _resultFilterRow = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1,
+                Height = UiTheme.ControlHeight,
+                Margin = new Padding(0, 0, 0, ScaleLogical(8)),
+                Padding = new Padding(0),
+                BackColor = UiTheme.Canvas,
+            };
+            _resultFilterRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            _resultFilterRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            _resultFilterRow.RowStyles.Add(new RowStyle(SizeType.Absolute, UiTheme.ControlHeight));
+            _resultFilterRow.Controls.Add(_resultFilterPanel, 0, 0);
+            _resultFilterRow.Controls.Add(_resultSearchBox, 1, 0);
             AddResultFilterButton(SearchResultFilter.All, "全部");
             AddResultFilterButton(SearchResultFilter.Problems, "问题项");
             AddResultFilterButton(SearchResultFilter.Found, "已找到");
@@ -682,72 +1114,138 @@ namespace JiePinPai.Navisworks
             AddResultFilterButton(SearchResultFilter.Duplicate, "重复");
             AddResultFilterButton(SearchResultFilter.ConditionInvalid, "条件异常");
 
-            _lblExportSelection = new Label
+            _matchActionsPanel = new FlowLayoutPanel
             {
-                Text = "已勾选 0 条",
-                AutoSize = false,
-                Width = ScaleLogical(108),
-                Height = CalculateButtonHeight(this.Font),
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(71, 85, 105),
-                Margin = new Padding(ScaleLogical(6), 0, 0, 0),
-            };
-            _resultFilterPanel.Controls.Add(_lblExportSelection);
-
-            // 查看重复对象后，一键把当前选择还原为搜索选中的全部对象。
-            _btnRestoreSelection = new Button
-            {
-                Text = "还原全部选择",
+                Dock = DockStyle.Fill,
                 AutoSize = true,
-                MinimumSize = new Size(
-                    ScaleLogical(110),
-                    CalculateButtonHeight(this.Font)),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.White,
-                ForeColor = Color.FromArgb(37, 99, 235),
-                Font = this.Font,
-                Margin = new Padding(ScaleLogical(12), 0, 0, 0),
+                WrapContents = true,
+                Margin = new Padding(0, 0, 0, ScaleLogical(10)),
+                Padding = new Padding(0),
+                BackColor = UiTheme.Canvas,
+            };
+            _btnToggleDuplicateInclusion = new ThemedButton(ButtonKind.Secondary)
+            {
+                Text = "全选重复项",
+                MinimumSize = new Size(ScaleLogical(120), UiTheme.ControlHeight),
                 Enabled = false,
             };
-            _btnRestoreSelection.FlatAppearance.BorderColor =
-                Color.FromArgb(37, 99, 235);
+            _btnToggleDuplicateInclusion.Click += (s, e) =>
+                ToggleDuplicateInclusion(GetDuplicateResultIds(_lastResults));
+
+            _lblDuplicateInclusion = MakeInlineStatusLabel(new Padding(0, 0, ScaleLogical(8), 0));
+            _lblExportSelection = MakeInlineStatusLabel(new Padding(0));
+            _lblExportSelection.Text = "导出已勾选 0 条";
+
+            // 查看重复对象后，一键把当前选择还原为搜索选中的全部对象。
+            _btnRestoreSelection = new ThemedButton(ButtonKind.Secondary)
+            {
+                Text = "还原全部选择",
+                Enabled = false,
+            };
             _btnRestoreSelection.Click += BtnRestoreSelection_Click;
-            _resultFilterPanel.Controls.Add(_btnRestoreSelection);
+
+            _matchActionsPanel.Controls.AddRange(new Control[]
+            {
+                _btnToggleDuplicateInclusion,
+                _lblDuplicateInclusion,
+                UiTheme.CreateDivider(),
+                _btnRestoreSelection,
+                _lblExportSelection,
+            });
 
             _resultsGrid = CreateResultsGrid();
+            _resultsGrid.Margin = new Padding(1);
             _resultsGrid.CellDoubleClick += ResultsGrid_CellDoubleClick;
+            _resultsGrid.CellMouseDown += (s, e) =>
+            {
+                // 右键先把该行设为当前行，菜单才作用于正确的结果。
+                if (e.Button == MouseButtons.Right && e.RowIndex >= 0 && e.ColumnIndex >= 0)
+                    _resultsGrid.CurrentCell = _resultsGrid.Rows[e.RowIndex].Cells[e.ColumnIndex];
+            };
+            _resultsGrid.ContextMenuStrip = BuildResultsMenu();
+            _resultsGrid.KeyDown += (s, e) =>
+            {
+                if (e.KeyData == Keys.Enter)
+                {
+                    SearchResult current = GetCurrentResult();
+                    if (current != null)
+                        ResultsGrid_CellDoubleClick(_resultsGrid,
+                            new DataGridViewCellEventArgs(RESULT_COL_STATUS, _resultsGrid.CurrentRow.Index));
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                }
+                else if (e.KeyData == Keys.Up && _resultsGrid.CurrentRow?.Index == 0)
+                {
+                    FocusResultSearch();
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                }
+            };
+            // 在列表中直接打字即转入搜索框，无需快捷键。
+            _resultsGrid.KeyPress += (s, e) =>
+            {
+                if (char.IsControl(e.KeyChar) || _lastResults == null)
+                    return;
+                _resultSearchBox.AppendAndFocus(e.KeyChar);
+                e.Handled = true;
+            };
             _resultsGrid.CellValueChanged += ResultsGrid_CellValueChanged;
             _resultsGrid.CellPainting += ResultsGrid_CellPainting;
             _resultsGrid.CurrentCellDirtyStateChanged +=
                 ResultsGrid_CurrentCellDirtyStateChanged;
             _resultsGrid.ColumnHeaderMouseClick +=
                 ResultsGrid_ColumnHeaderMouseClick;
+            // 无结果时，状态提示（尚未搜索、条件已修改、搜索中）显示在表格中央。
+            UiTheme.AttachEmptyState(_resultsGrid, () => _lastResults == null
+                ? (_resultsEmptyMessage ?? "还没有搜索结果\n\n执行搜索后，这里会逐条列出每个条件的匹配情况。")
+                : string.IsNullOrEmpty(_resultSearchText)
+                    ? "当前筛选下没有结果。"
+                    : $"没有找到“{_resultSearchText}”\n\n可切换到全部筛选，或检查输入的编号。", UiTheme.EmptyIcon.Search);
             SetActiveResultFilter(SearchResultFilter.All);
 
             root.Controls.Add(_lblResultSummary, 0, 0);
-            root.Controls.Add(_resultFilterPanel, 0, 1);
-            root.Controls.Add(_resultsGrid, 0, 2);
+            root.Controls.Add(_resultFilterRow, 0, 1);
+            root.Controls.Add(_matchActionsPanel, 0, 2);
+            root.Controls.Add(_resultsGrid, 0, 3);
+            UiTheme.AttachHairlineBorder(root, _resultsGrid);
+            UpdateResultChromeVisibility();
             _tabResults.Controls.Add(root);
             _tabResults.ResumeLayout(true);
         }
 
+        /// <summary>有结果时才显示摘要、筛选与重复项工具行。</summary>
+        private void UpdateResultChromeVisibility()
+        {
+            if (_matchActionsPanel == null)
+                return;
+            bool hasResults = _lastResults != null;
+            _lblResultSummary.Visible = hasResults;
+            _resultFilterRow.Visible = hasResults;
+            _matchActionsPanel.Visible = hasResults;
+            _resultsGrid.Invalidate();
+        }
+
+        private Label MakeInlineStatusLabel(Padding margin)
+        {
+            return new Label
+            {
+                AutoSize = true,
+                MinimumSize = new Size(0, UiTheme.ControlHeight),
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = UiTheme.TextMuted,
+                Margin = margin,
+            };
+        }
+
         private void AddResultFilterButton(SearchResultFilter filter, string text)
         {
-            var button = new Button
+            var button = new ThemedButton(ButtonKind.Secondary)
             {
                 Text = text,
                 Tag = filter,
-                AutoSize = true,
-                MinimumSize = new Size(
-                    ScaleLogical(74),
-                    CalculateButtonHeight(this.Font)),
-                FlatStyle = FlatStyle.Flat,
-                BackColor = Color.White,
-                ForeColor = Color.FromArgb(51, 65, 85),
-                Font = this.Font,
+                MinimumSize = new Size(ScaleLogical(64), UiTheme.ControlHeight),
                 Margin = new Padding(0, 0, ScaleLogical(6), 0),
             };
-            button.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
             button.Click += ResultFilterButton_Click;
             _resultFilterPanel.Controls.Add(button);
         }
@@ -759,48 +1257,18 @@ namespace JiePinPai.Navisworks
                 Dock = DockStyle.Fill,
                 AllowUserToAddRows = false,
                 AllowUserToDeleteRows = false,
-                AllowUserToResizeRows = false,
                 ReadOnly = false,
                 MultiSelect = false,
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 EditMode = DataGridViewEditMode.EditOnEnter,
-                RowHeadersVisible = false,
                 AutoGenerateColumns = false,
-                BackgroundColor = Color.White,
-                BorderStyle = BorderStyle.FixedSingle,
-                GridColor = Color.FromArgb(226, 232, 240),
-                CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal,
             };
-            grid.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(241, 245, 249);
-            grid.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(51, 65, 85);
-            grid.ColumnHeadersDefaultCellStyle.SelectionBackColor = Color.FromArgb(241, 245, 249);
-            grid.ColumnHeadersDefaultCellStyle.SelectionForeColor = Color.FromArgb(51, 65, 85);
-            grid.ColumnHeadersDefaultCellStyle.Font = new Font(grid.Font, FontStyle.Bold);
-            grid.EnableHeadersVisualStyles = false;
-            grid.RowTemplate.Height = CalculateContentHeight(grid.Font, 1, 12);
-            ApplyGridHeaderLayout(grid);
+            UiTheme.StyleGrid(grid);
 
             var exportColumn = new DataGridViewCheckBoxColumn
             {
                 Name = "ExportSelected",
-                HeaderText = "选择",
-                Width = ScaleLogical(42),
-                MinimumWidth = ScaleLogical(42),
-                ThreeState = false,
-                SortMode = DataGridViewColumnSortMode.NotSortable,
-                ReadOnly = false,
-                Resizable = DataGridViewTriState.False,
-                FlatStyle = FlatStyle.Standard,
-            };
-            exportColumn.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
-            exportColumn.DefaultCellStyle.Padding = new Padding(0);
-            exportColumn.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleCenter;
-            exportColumn.HeaderCell.ToolTipText = "单击表头可勾选或取消当前筛选下的全部结果";
-            grid.Columns.Add(exportColumn);
-            var includeMatchColumn = new DataGridViewCheckBoxColumn
-            {
-                Name = "IncludeInMatch",
-                HeaderText = "计入匹配",
+                HeaderText = "导出",
                 Width = ScaleLogical(72),
                 MinimumWidth = ScaleLogical(72),
                 ThreeState = false,
@@ -809,36 +1277,52 @@ namespace JiePinPai.Navisworks
                 Resizable = DataGridViewTriState.False,
                 FlatStyle = FlatStyle.Standard,
             };
+            exportColumn.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            exportColumn.DefaultCellStyle.Padding = new Padding(0);
+            exportColumn.HeaderCell.ToolTipText = "单击表头可勾选或取消当前筛选下的全部结果，仅用于导出";
+            grid.Columns.Add(exportColumn);
+            var includeMatchColumn = new DataGridViewCheckBoxColumn
+            {
+                Name = "IncludeInMatch",
+                HeaderText = "计入匹配",
+                Width = ScaleLogical(108),
+                MinimumWidth = ScaleLogical(108),
+                ThreeState = false,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                ReadOnly = false,
+                Resizable = DataGridViewTriState.False,
+                FlatStyle = FlatStyle.Standard,
+            };
             includeMatchColumn.DefaultCellStyle.Alignment =
                 DataGridViewContentAlignment.MiddleCenter;
-            includeMatchColumn.HeaderCell.Style.Alignment =
-                DataGridViewContentAlignment.MiddleCenter;
+            includeMatchColumn.DefaultCellStyle.Padding = new Padding(0);
             includeMatchColumn.HeaderCell.ToolTipText =
-                "唯一找到项固定计入；重复项可选择是否计入匹配对象总数和后续操作";
+                "单击表头全选或取消当前筛选中的重复项；唯一找到项固定计入";
             grid.Columns.Add(includeMatchColumn);
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "ConditionIndex",
-                HeaderText = "序号",
-                Width = ScaleLogical(58),
+                HeaderText = "#",
+                Width = ScaleLogical(52),
+                DefaultCellStyle = { ForeColor = UiTheme.TextMuted },
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "Status",
                 HeaderText = "状态",
-                Width = ScaleLogical(88),
+                Width = ScaleLogical(96),
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "Category",
                 HeaderText = "分类",
-                Width = ScaleLogical(118),
+                Width = ScaleLogical(110),
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "Property",
                 HeaderText = "属性名",
-                Width = ScaleLogical(132),
+                Width = ScaleLogical(128),
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
@@ -851,20 +1335,21 @@ namespace JiePinPai.Navisworks
                 Name = "Value",
                 HeaderText = "查询值",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
-                FillWeight = 32F,
+                FillWeight = 55F,
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "MatchCount",
                 HeaderText = "匹配数",
                 Width = ScaleLogical(70),
+                DefaultCellStyle = { Alignment = DataGridViewContentAlignment.MiddleRight },
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "Message",
                 HeaderText = "说明",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
-                FillWeight = 48F,
+                FillWeight = 45F,
             });
             for (int columnIndex = 2; columnIndex < grid.Columns.Count; columnIndex++)
                 grid.Columns[columnIndex].ReadOnly = true;
@@ -885,48 +1370,104 @@ namespace JiePinPai.Navisworks
             if (result == null)
                 return;
 
-            if (result.Status == SearchResultStatus.Duplicate)
-            {
-                if (!EnsureDocumentUsable())
-                    return;
+            // 双击：有匹配对象则在模型中定位；没有（未找到、条件异常）则直接打开该条件修改。
+            if (result.MatchedItems != null && result.MatchedItems.Count > 0)
+                LocateResultInModel(result);
+            else
+                EditConditionForResult(result);
+        }
 
-                try
-                {
-                    List<ModelItem> selected = SelectionService.SetSelection(
-                        _doc,
-                        result.MatchedItems);
-                    // 相机对准选中对象；COM 失败为非致命，选择仍保留。
-                    ViewFocusService.ZoomToCurrentSelection(_doc);
-                    int displayIndex = result.Condition != null
-                        ? result.Condition.DisplayIndex
-                        : 0;
-                    _lblResultSummary.Text =
-                        $"已定位并选中重复结果 #{displayIndex} 的 {selected.Count} 个对象，" +
-                        "可在视图中查看；查看完点『还原全部选择』恢复搜索选中的全部对象。";
-                }
-                catch (Exception ex)
-                {
-                    // 仅“设为选择”本身失败才提示；相机缩放失败已被静默处理。
-                    MessageBox.Show(
-                        this,
-                        "定位失败：\n" + ex.Message,
-                        "傑出品·定位重复结果",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Error);
-                }
+        private void LocateResultInModel(SearchResult result)
+        {
+            if (result?.MatchedItems == null || result.MatchedItems.Count == 0)
                 return;
-            }
+            if (!EnsureDocumentUsable())
+                return;
 
-            int conditionIndex = result.Condition.ConditionIndex;
+            try
+            {
+                List<ModelItem> selected = SelectionService.SetSelection(
+                    _doc,
+                    result.MatchedItems);
+                // 相机对准选中对象；COM 失败为非致命，选择仍保留。
+                ViewFocusService.ZoomToCurrentSelection(_doc);
+                int displayIndex = result.Condition != null
+                    ? result.Condition.DisplayIndex
+                    : 0;
+                ShowToast($"已在模型中定位条件 #{displayIndex} 的 {selected.Count} 个对象；" +
+                    "点还原全部选择可恢复。");
+            }
+            catch (Exception ex)
+            {
+                // 仅“设为选择”本身失败才提示；相机缩放失败已被静默处理。
+                MessageBox.Show(
+                    this,
+                    "定位失败：\n" + ex.Message,
+                    "Curi · 定位结果",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void GoToConditionForResult(SearchResult result)
+        {
+            int conditionIndex = result?.Condition?.ConditionIndex ?? -1;
             if (conditionIndex < 0 || conditionIndex >= _conditionsGrid.Rows.Count)
                 return;
 
-            _tabControl.SelectedTab = _tabConditions;
+            SwitchTab(_tabConditions);
             _conditionsGrid.ClearSelection();
             DataGridViewRow conditionRow = _conditionsGrid.Rows[conditionIndex];
             conditionRow.Selected = true;
             _conditionsGrid.CurrentCell = conditionRow.Cells[COL_VALUE];
             _conditionsGrid.FirstDisplayedScrollingRowIndex = conditionIndex;
+        }
+
+        private void EditConditionForResult(SearchResult result)
+        {
+            int conditionIndex = result?.Condition?.ConditionIndex ?? -1;
+            if (conditionIndex < 0 || conditionIndex >= _conditions.Count)
+                return;
+            GoToConditionForResult(result);
+            ConditionsGrid_CellDoubleClick(_conditionsGrid,
+                new DataGridViewCellEventArgs(COL_VALUE, conditionIndex));
+        }
+
+        private ContextMenuStrip BuildResultsMenu()
+        {
+            var menu = new ContextMenuStrip { Font = UiTheme.BodyFont, ShowImageMargin = false };
+            var locate = new ToolStripMenuItem("在模型中定位", null, (s, e) => LocateResultInModel(GetCurrentResult()));
+            var edit = new ToolStripMenuItem("修改该条件…", null, (s, e) => EditConditionForResult(GetCurrentResult()));
+            var go = new ToolStripMenuItem("转到条件列表", null, (s, e) => GoToConditionForResult(GetCurrentResult()));
+            var copy = new ToolStripMenuItem("复制查询值", null, (s, e) =>
+            {
+                string value = GetCurrentResult()?.QueryValue;
+                if (!string.IsNullOrEmpty(value))
+                {
+                    Clipboard.SetText(value);
+                    ShowToast("已复制查询值：" + value);
+                }
+            });
+            menu.Items.AddRange(new ToolStripItem[] { locate, edit, go, new ToolStripSeparator(), copy });
+            menu.Opening += (s, e) =>
+            {
+                SearchResult result = GetCurrentResult();
+                if (result == null)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+                locate.Enabled = result.MatchedItems != null && result.MatchedItems.Count > 0;
+                copy.Enabled = !string.IsNullOrEmpty(result.QueryValue);
+            };
+            ThemedMenuRenderer.Apply(menu);
+            return menu;
+        }
+
+        private SearchResult GetCurrentResult()
+        {
+            DataGridViewRow row = _resultsGrid.CurrentRow;
+            return row?.Tag as SearchResult;
         }
 
         private void ResultFilterButton_Click(object sender, EventArgs e)
@@ -988,9 +1529,8 @@ namespace JiePinPai.Navisworks
                 if (!(button.Tag is SearchResultFilter value))
                     continue;
 
-                bool active = value == filter;
-                button.BackColor = active ? Color.FromArgb(37, 99, 235) : Color.White;
-                button.ForeColor = active ? Color.White : Color.FromArgb(51, 65, 85);
+                if (button is ThemedButton themed)
+                    themed.Active = value == filter;
             }
             RefreshResultsGrid(_lastResults ?? Enumerable.Empty<SearchResult>());
         }
@@ -1003,7 +1543,7 @@ namespace JiePinPai.Navisworks
                 _resultsGrid.Rows.Clear();
                 foreach (SearchResult result in results)
                 {
-                    if (!SearchResultPolicy.MatchesFilter(result.Status, _activeResultFilter))
+                    if (!IsResultVisible(result))
                         continue;
 
                     int displayIndex = result.Condition.DisplayIndex;
@@ -1040,6 +1580,7 @@ namespace JiePinPai.Navisworks
             }
 
             UpdateExportSelectionState();
+            UpdateDuplicateInclusionState();
         }
 
         private void ResultsGrid_CurrentCellDirtyStateChanged(object sender, EventArgs e)
@@ -1121,17 +1662,82 @@ namespace JiePinPai.Navisworks
             {
                 bool included = Convert.ToBoolean(
                     row.Cells[RESULT_COL_INCLUDE_MATCH].Value);
-                if (included)
-                    _includedDuplicateResultIndices.Add(displayIndex);
-                else
-                    _includedDuplicateResultIndices.Remove(displayIndex);
-
-                RecalculateEffectiveMatchContext(updateRestoreSelection: true);
+                SetDuplicateInclusion(new[] { displayIndex }, included);
             }
+        }
+
+        private static List<int> GetDuplicateResultIds(IEnumerable<SearchResult> results)
+        {
+            return (results ?? Enumerable.Empty<SearchResult>())
+                .Where(result => result?.Condition != null
+                    && result.Status == SearchResultStatus.Duplicate)
+                .Select(result => result.Condition.DisplayIndex)
+                .Distinct()
+                .ToList();
+        }
+
+        private void ToggleDuplicateInclusion(List<int> duplicateIds)
+        {
+            if (_lastHideExecuted || duplicateIds.Count == 0)
+                return;
+
+            _resultsGrid.EndEdit();
+            bool allIncluded = duplicateIds.All(_includedDuplicateResultIndices.Contains);
+            SetDuplicateInclusion(duplicateIds, !allIncluded);
+        }
+
+        // 单条与批量共用入口。批量更新只计算一次有效集合，保留滚动位置和导出勾选。
+        private void SetDuplicateInclusion(IEnumerable<int> duplicateIds, bool included)
+        {
+            if (_lastHideExecuted)
+                return;
+
+            _includedDuplicateResultIndices = DuplicateMatchInclusionPolicy.SetInclusion(
+                _includedDuplicateResultIndices, duplicateIds, included);
+            _updatingResultChecks = true;
+            try
+            {
+                foreach (DataGridViewRow row in _resultsGrid.Rows)
+                {
+                    var result = row.Tag as SearchResult;
+                    if (result?.Status != SearchResultStatus.Duplicate)
+                        continue;
+                    bool value = IsResultIncludedInMatch(result);
+                    DataGridViewCell cell = row.Cells[RESULT_COL_INCLUDE_MATCH];
+                    if (!Equals(cell.Value, value))
+                        cell.Value = value;
+                }
+            }
+            finally
+            {
+                _updatingResultChecks = false;
+            }
+
+            RecalculateEffectiveMatchContext(updateRestoreSelection: true);
+            UpdateDuplicateInclusionState();
+        }
+
+        private void UpdateDuplicateInclusionState()
+        {
+            List<int> duplicateIds = GetDuplicateResultIds(_lastResults);
+            int includedCount = duplicateIds.Count(_includedDuplicateResultIndices.Contains);
+            bool allIncluded = duplicateIds.Count > 0 && includedCount == duplicateIds.Count;
+            _btnToggleDuplicateInclusion.Text = allIncluded ? "取消全选重复项" : "全选重复项";
+            _btnToggleDuplicateInclusion.Enabled = duplicateIds.Count > 0 && !_lastHideExecuted;
+            _lblDuplicateInclusion.Text = $"重复项计入：{includedCount} / {duplicateIds.Count}";
+            if (_lastHideExecuted)
+                _lblDuplicateInclusion.Text += "（隐藏已执行）";
+
+            DataGridViewColumn column = _resultsGrid.Columns[RESULT_COL_INCLUDE_MATCH];
+            column.HeaderCell.ToolTipText = _lastHideExecuted
+                ? "本次隐藏已经执行，重新搜索后才能调整"
+                : "单击表头全选或取消当前筛选中的重复项；唯一找到项固定计入";
+            _resultsGrid.InvalidateCell(column.HeaderCell);
         }
 
         private void RecalculateEffectiveMatchContext(bool updateRestoreSelection)
         {
+            NotifyMeasurementSourceChanged();
             List<ModelItem> effectiveItems = ResolveEffectiveMatchedItems(
                 _lastResults ?? Enumerable.Empty<SearchResult>());
             _lastMatchedItemsInScope = effectiveItems;
@@ -1184,6 +1790,13 @@ namespace JiePinPai.Navisworks
             object sender,
             DataGridViewCellMouseEventArgs e)
         {
+            if (e.Button != MouseButtons.Left)
+                return;
+            if (e.ColumnIndex == RESULT_COL_INCLUDE_MATCH)
+            {
+                ToggleDuplicateInclusion(GetDuplicateResultIds(GetCurrentFilteredResults()));
+                return;
+            }
             if (e.ColumnIndex != RESULT_COL_EXPORT)
                 return;
 
@@ -1203,23 +1816,68 @@ namespace JiePinPai.Navisworks
             object sender,
             DataGridViewCellPaintingEventArgs e)
         {
-            if (e.RowIndex != -1 || e.ColumnIndex != RESULT_COL_EXPORT)
+            if (e.RowIndex >= 0 && e.ColumnIndex == RESULT_COL_STATUS)
+            {
+                PaintStatusBadge(e);
+                return;
+            }
+            if (e.RowIndex != -1
+                || (e.ColumnIndex != RESULT_COL_EXPORT && e.ColumnIndex != RESULT_COL_INCLUDE_MATCH))
                 return;
 
             e.Paint(
                 e.CellBounds,
                 DataGridViewPaintParts.Background | DataGridViewPaintParts.Border);
 
-            CheckBoxState state = GetExportHeaderCheckBoxState();
+            bool isExport = e.ColumnIndex == RESULT_COL_EXPORT;
+            CheckBoxState state = isExport
+                ? GetExportHeaderCheckBoxState()
+                : GetHeaderCheckBoxState(
+                    GetDuplicateResultIds(GetCurrentFilteredResults()),
+                    _includedDuplicateResultIndices,
+                    !_lastHideExecuted);
             Size glyphSize = CheckBoxRenderer.GetGlyphSize(e.Graphics, state);
             var glyphBounds = new Rectangle(
-                e.CellBounds.Left + ((e.CellBounds.Width - glyphSize.Width) / 2),
+                e.CellBounds.Left + ScaleLogical(6),
                 e.CellBounds.Top + ((e.CellBounds.Height - glyphSize.Height) / 2),
                 glyphSize.Width,
                 glyphSize.Height);
 
             CheckBoxRenderer.DrawCheckBox(e.Graphics, glyphBounds.Location, state);
+            var textBounds = new Rectangle(
+                glyphBounds.Right + ScaleLogical(4), e.CellBounds.Top,
+                Math.Max(0, e.CellBounds.Right - glyphBounds.Right - ScaleLogical(6)),
+                e.CellBounds.Height);
+            TextRenderer.DrawText(e.Graphics, _resultsGrid.Columns[e.ColumnIndex].HeaderText,
+                e.CellStyle.Font, textBounds, e.CellStyle.ForeColor,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
 
+            e.Handled = true;
+        }
+
+        /// <summary>“状态”列绘制为圆角标签。</summary>
+        private void PaintStatusBadge(DataGridViewCellPaintingEventArgs e)
+        {
+            var result = _resultsGrid.Rows[e.RowIndex].Tag as SearchResult;
+            if (result == null)
+                return;
+
+            e.Paint(e.CellBounds,
+                DataGridViewPaintParts.Background
+                | DataGridViewPaintParts.SelectionBackground
+                | DataGridViewPaintParts.Border);
+            UiTheme.GetStatusColors(result.Status, out Color back, out Color fore);
+            string text = Convert.ToString(e.FormattedValue);
+            Size textSize = TextRenderer.MeasureText(text, UiTheme.BodyStrongFont);
+            int badgeHeight = textSize.Height + ScaleLogical(4);
+            var badge = new Rectangle(
+                e.CellBounds.Left + ScaleLogical(8),
+                e.CellBounds.Top + (e.CellBounds.Height - badgeHeight) / 2,
+                Math.Min(textSize.Width + ScaleLogical(12), e.CellBounds.Width - ScaleLogical(12)),
+                badgeHeight);
+            UiTheme.FillRoundedRectangle(e.Graphics, back, badge, badgeHeight / 2);
+            TextRenderer.DrawText(e.Graphics, text, UiTheme.BodyStrongFont, badge, fore,
+                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             e.Handled = true;
         }
 
@@ -1228,26 +1886,95 @@ namespace JiePinPai.Navisworks
             List<int> visibleIds = GetCurrentFilteredResults()
                 .Select(result => result.Condition.DisplayIndex)
                 .ToList();
-            if (visibleIds.Count == 0)
+            return GetHeaderCheckBoxState(visibleIds, _checkedExportResultIndices, true);
+        }
+
+        private static CheckBoxState GetHeaderCheckBoxState(
+            List<int> eligibleIds, ISet<int> selectedIds, bool enabled)
+        {
+            if (eligibleIds.Count == 0)
                 return CheckBoxState.UncheckedDisabled;
 
-            int selectedCount = visibleIds.Count(
-                id => _checkedExportResultIndices.Contains(id));
+            int selectedCount = eligibleIds.Count(selectedIds.Contains);
             if (selectedCount == 0)
-                return CheckBoxState.UncheckedNormal;
-            if (selectedCount == visibleIds.Count)
-                return CheckBoxState.CheckedNormal;
-            return CheckBoxState.MixedNormal;
+                return enabled ? CheckBoxState.UncheckedNormal : CheckBoxState.UncheckedDisabled;
+            if (selectedCount == eligibleIds.Count)
+                return enabled ? CheckBoxState.CheckedNormal : CheckBoxState.CheckedDisabled;
+            return enabled ? CheckBoxState.MixedNormal : CheckBoxState.MixedDisabled;
         }
 
         private List<SearchResult> GetCurrentFilteredResults()
         {
             return (_lastResults ?? new List<SearchResult>())
                 .Where(result => result?.Condition != null)
-                .Where(result => SearchResultPolicy.MatchesFilter(
-                    result.Status,
-                    _activeResultFilter))
+                .Where(IsResultVisible)
                 .ToList();
+        }
+
+        /// <summary>状态筛选与搜索框共同决定一行是否显示；“当前筛选”的导出与表头勾选也以此为准。</summary>
+        private bool IsResultVisible(SearchResult result)
+        {
+            if (result?.Condition == null
+                || !SearchResultPolicy.MatchesFilter(result.Status, _activeResultFilter))
+                return false;
+            if (string.IsNullOrEmpty(_resultSearchText))
+                return true;
+
+            string query = _resultSearchText;
+            // 以 # 开头按序号精确查找（如 #12）；否则在查询值、属性、分类、说明中做包含匹配，
+            // 这样输入 15105 这类编号片段能直接找到查询值 ESPT-M12-15105。
+            if (query.StartsWith("#", StringComparison.Ordinal))
+                return int.TryParse(query.Substring(1), out int index)
+                    && result.Condition.DisplayIndex == index;
+            return Contains(result.Condition.Value, query)
+                || Contains(result.Condition.GetPropertyName(), query)
+                || Contains(result.Condition.GetCategoryName(), query)
+                || Contains(result.StatusMessage, query);
+        }
+
+        private static bool Contains(string text, string query)
+        {
+            return !string.IsNullOrEmpty(text)
+                && text.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void SelectFirstResultRow()
+        {
+            if (_resultsGrid.Rows.Count == 0)
+                return;
+            _resultsGrid.ClearSelection();
+            DataGridViewRow first = _resultsGrid.Rows[0];
+            first.Selected = true;
+            _resultsGrid.CurrentCell = first.Cells[RESULT_COL_STATUS];
+            _resultsGrid.FirstDisplayedScrollingRowIndex = 0;
+        }
+
+        /// <summary>搜索框 Enter：定位当前选中（默认第一条）结果到模型；无匹配对象时提示。</summary>
+        private void LocateFirstSearchMatch()
+        {
+            SearchResult result = GetCurrentResult();
+            if (result == null)
+            {
+                ShowToast(string.IsNullOrEmpty(_resultSearchText)
+                    ? "先输入要查找的编号或查询值。"
+                    : "没有匹配的结果。");
+                return;
+            }
+            if (result.MatchedItems == null || result.MatchedItems.Count == 0)
+            {
+                ShowToast($"条件 #{result.Condition.DisplayIndex} 在模型中没有匹配对象，" +
+                    "双击该行可直接修改条件。");
+                return;
+            }
+            LocateResultInModel(result);
+        }
+
+        private void FocusResultSearch()
+        {
+            if (_lastResults == null)
+                return;
+            SwitchTab(_tabResults);
+            _resultSearchBox.FocusAndSelectAll();
         }
 
         private void UpdateExportSelectionState()
@@ -1266,24 +1993,7 @@ namespace JiePinPai.Navisworks
                 _checkedExportResultIndices);
 
             if (_lblExportSelection != null)
-                _lblExportSelection.Text = $"已勾选 {_checkedExportResultIndices.Count} 条";
-            if (_exportCheckedMenuItem != null)
-            {
-                _exportCheckedMenuItem.Text =
-                    $"导出已勾选（{_checkedExportResultIndices.Count}）";
-                _exportCheckedMenuItem.Enabled = _checkedExportResultIndices.Count > 0;
-            }
-            if (_exportFilteredMenuItem != null)
-            {
-                _exportFilteredMenuItem.Text =
-                    $"导出当前筛选（{visibleIds.Count}）";
-                _exportFilteredMenuItem.Enabled = visibleIds.Count > 0;
-            }
-            if (_exportAllMenuItem != null)
-            {
-                _exportAllMenuItem.Text = $"导出全部结果（{allIds.Count}）";
-                _exportAllMenuItem.Enabled = allIds.Count > 0;
-            }
+                _lblExportSelection.Text = $"导出已勾选 {_checkedExportResultIndices.Count} 条";
             if (_btnExportResults != null)
                 _btnExportResults.Enabled = allIds.Count > 0;
 
@@ -1298,27 +2008,12 @@ namespace JiePinPai.Navisworks
             DataGridViewRow row,
             SearchResultStatus status)
         {
-            switch (status)
-            {
-                case SearchResultStatus.Found:
-                    row.DefaultCellStyle.BackColor = Color.White;
-                    row.DefaultCellStyle.ForeColor = Color.FromArgb(22, 101, 52);
-                    break;
-                case SearchResultStatus.NotFound:
-                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 241, 242);
-                    row.DefaultCellStyle.ForeColor = Color.FromArgb(153, 27, 27);
-                    break;
-                case SearchResultStatus.Duplicate:
-                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 247, 237);
-                    row.DefaultCellStyle.ForeColor = Color.FromArgb(154, 52, 18);
-                    break;
-                case SearchResultStatus.ConditionInvalid:
-                    row.DefaultCellStyle.BackColor = Color.FromArgb(255, 251, 235);
-                    row.DefaultCellStyle.ForeColor = Color.FromArgb(133, 77, 14);
-                    break;
-            }
-            row.DefaultCellStyle.SelectionBackColor = Color.FromArgb(219, 234, 254);
-            row.DefaultCellStyle.SelectionForeColor = Color.FromArgb(15, 23, 42);
+            // 行保持中性底色，仅“状态”列以彩色标签呈现，避免整表花色干扰阅读。
+            UiTheme.GetStatusColors(status, out Color back, out Color fore);
+            DataGridViewCellStyle statusStyle = row.Cells[RESULT_COL_STATUS].Style;
+            statusStyle.ForeColor = fore;
+            statusStyle.SelectionForeColor = fore;
+            statusStyle.Font = UiTheme.BodyStrongFont;
         }
 
         private void UpdateResultFilterCaptions(IReadOnlyCollection<SearchResult> results)
@@ -1353,18 +2048,38 @@ namespace JiePinPai.Navisworks
 
         #region 数据绑定
 
-        private void RefreshConditionsGrid()
+        /// <summary>重建条件表；可指定刷新后选中的行，保持用户的编辑位置。</summary>
+        private void RefreshConditionsGrid(int selectIndex = -1, int selectCount = 1)
         {
             _conditionsGrid.Rows.Clear();
             foreach (var c in _conditions)
             {
                 _conditionsGrid.Rows.Add(
+                    _conditionsGrid.Rows.Count + 1,
                     c.CategoryDisplay ?? c.CategoryInternal ?? "",
                     c.PropertyDisplay ?? c.PropertyInternal ?? "",
                     c.Test,
                     c.Value);
             }
+            _conditionsGrid.ClearSelection();
+            if (selectIndex >= 0 && selectIndex < _conditionsGrid.Rows.Count)
+            {
+                _conditionsGrid.CurrentCell = _conditionsGrid.Rows[selectIndex].Cells[COL_VALUE];
+                int last = Math.Min(_conditionsGrid.Rows.Count, selectIndex + Math.Max(1, selectCount));
+                for (int i = selectIndex; i < last; i++)
+                    _conditionsGrid.Rows[i].Selected = true;
+            }
+            UpdateConditionActionState();
+            UpdateNavCaptions();
+        }
 
+        private void UpdateConditionActionState()
+        {
+            if (_btnDeleteCondition == null)
+                return;
+            _btnDeleteCondition.Enabled = _conditionsGrid.SelectedRows.Count > 0;
+            _btnClearConditions.Enabled = _conditions.Count > 0;
+            _btnExportXml.Enabled = _conditions.Count > 0;
         }
 
         /// <summary>
@@ -1376,12 +2091,15 @@ namespace JiePinPai.Navisworks
 
             _currentXmlPath = xmlPath;
             _conditions = importedConditions;
+            _conditionsDirty = false;
             RefreshConditionsGrid();
             InvalidateSearchResults("已导入新的搜索条件，请执行搜索。");
+            ShowToast($"已导入 {importedConditions.Count} 条条件：{Path.GetFileName(xmlPath)}");
         }
 
         private void InvalidateSearchResults(string message)
         {
+            NotifyMeasurementSourceChanged();
             _lastResults = null;
             _lastTotalMatched = 0;
             _lastHideExecuted = false;
@@ -1391,13 +2109,18 @@ namespace JiePinPai.Navisworks
             _lastProtectedItems.Clear();
             _checkedExportResultIndices.Clear();
             _includedDuplicateResultIndices.Clear();
+            _resultSearchText = string.Empty;
+            _resultSearchBox?.Clear();
             _lblResultSummary.Text = message;
+            _resultsEmptyMessage = message;
+            UpdateResultChromeVisibility();
             UpdateResultFilterCaptions(Array.Empty<SearchResult>());
             SetActiveResultFilter(SearchResultFilter.All);
             _btnExportResults.Enabled = false;
             _btnCreateSelectionSet.Enabled = false;
             ClearSearchSelection();
             UpdateHideButtonState();
+            UpdateNavCaptions();
         }
 
         /// <summary>缓存本次搜索选中的全部对象，并启用“还原全部选择”按钮。</summary>
@@ -1428,171 +2151,143 @@ namespace JiePinPai.Navisworks
             ref string test,
             ref string value)
         {
-            var form = new Form
+            using (var form = new ThemedDialog("编辑条件", new Size(ScaleLogical(640), ScaleLogical(470))))
             {
-                Text = "编辑条件",
-                ClientSize = new Size(ScaleLogical(760), ScaleLogical(420)),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterParent,
-                MaximizeBox = false,
-                MinimizeBox = false,
-                ShowInTaskbar = false,
-                Font = new Font("Microsoft YaHei UI", 9F),
-            };
+                form.SetHeading(
+                    "搜索条件",
+                    "先在 Navisworks 中选中目标对象，对照「属性」窗口填写：分类为分组名，属性名为左侧名称，查询值为右侧值。");
 
-            var layout = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(ScaleLogical(16)),
-                ColumnCount = 2,
-                RowCount = 6,
-            };
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(130)));
-            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(156)));
-            for (int i = 0; i < 4; i++)
-            {
-                layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(42)));
-            }
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(54)));
-
-            var helpText = new Label
-            {
-                Text = "填写方法：先在 Navisworks 里选中目标对象，打开“属性”窗口，对照属性面板填写。\r\n" +
-                       "分类：填属性所在的分组/选项卡名称，例如 Item、Element、SmartPlant 3D；不确定可留空。\r\n" +
-                       "属性名：填属性面板左侧名称，例如 名称、System Path、Tag，必须和界面显示一致。\r\n" +
-                       "查询值：填属性面板右侧要找的值，例如 M14-101、P-001 或某段编号。\r\n" +
-                       "匹配方式：equals = 完全相同；contains = 属性值里包含这段文字即可。\r\n" +
-                       "示例：属性面板显示 Item / 名称 = M14-101，就填 分类：Item，属性名：名称，查询值：M14-101。",
-                Dock = DockStyle.Fill,
-                AutoSize = false,
-                TextAlign = ContentAlignment.TopLeft,
-                Padding = new Padding(ScaleLogical(10)),
-                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
-                BorderStyle = BorderStyle.FixedSingle,
-            };
-            layout.Controls.Add(helpText, 0, 0);
-            layout.SetColumnSpan(helpText, 2);
-
-            Label MakeFieldLabel(string text)
-            {
-                return new Label
+                var layout = new TableLayoutPanel
                 {
-                    Text = text,
                     Dock = DockStyle.Fill,
-                    AutoSize = false,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    Padding = new Padding(0, 0, ScaleLogical(8), 0),
+                    ColumnCount = 1,
+                    BackColor = UiTheme.Surface,
+                    Padding = new Padding(0),
                 };
-            }
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
-            TextBox MakeTextBox(string text)
-            {
-                return new TextBox
+                void AddRow(Control control)
                 {
-                    Text = text,
-                    Dock = DockStyle.Top,
-                    Margin = new Padding(0, ScaleLogical(7), 0, 0),
-                };
-            }
-
-            var lblCat = MakeFieldLabel("分类（可选）");
-            var txtCat = MakeTextBox(category);
-
-            var lblProp = MakeFieldLabel("属性名（必填）");
-            var txtProp = MakeTextBox(property);
-
-            var lblTest = MakeFieldLabel("匹配方式");
-            var cmbTest = new ComboBox
-            {
-                Dock = DockStyle.Top,
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Margin = new Padding(0, ScaleLogical(7), 0, 0),
-            };
-            cmbTest.Items.AddRange(new[] { "equals", "contains" });
-            cmbTest.SelectedItem = string.Equals(test, "contains", StringComparison.OrdinalIgnoreCase)
-                ? "contains"
-                : "equals";
-
-            var lblVal = MakeFieldLabel("查询值");
-            var txtVal = MakeTextBox(value);
-
-            layout.Controls.Add(lblCat, 0, 1);
-            layout.Controls.Add(txtCat, 1, 1);
-            layout.Controls.Add(lblProp, 0, 2);
-            layout.Controls.Add(txtProp, 1, 2);
-            layout.Controls.Add(lblTest, 0, 3);
-            layout.Controls.Add(cmbTest, 1, 3);
-            layout.Controls.Add(lblVal, 0, 4);
-            layout.Controls.Add(txtVal, 1, 4);
-
-            var buttonPanel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(0, ScaleLogical(10), 0, 0),
-                ColumnCount = 4,
-                RowCount = 1,
-            };
-            var buttonGap = ScaleLogical(12);
-            var buttonWidth = ScaleLogical(112);
-            var buttonHeight = CalculateButtonHeight(form.Font) + ScaleLogical(8);
-            var buttonSize = new Size(buttonWidth, buttonHeight);
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, buttonWidth));
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, buttonGap));
-            buttonPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, buttonWidth));
-            buttonPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, buttonHeight));
-
-            var btnOk = new Button
-            {
-                Text = "确定",
-                Dock = DockStyle.Fill,
-                Size = buttonSize,
-                TextAlign = ContentAlignment.MiddleCenter,
-                DialogResult = DialogResult.OK,
-                Margin = new Padding(0),
-            };
-            var btnCancel = new Button
-            {
-                Text = "取消",
-                Dock = DockStyle.Fill,
-                Size = buttonSize,
-                TextAlign = ContentAlignment.MiddleCenter,
-                DialogResult = DialogResult.Cancel,
-                Margin = new Padding(0),
-            };
-            buttonPanel.Controls.Add(btnOk, 1, 0);
-            buttonPanel.Controls.Add(btnCancel, 3, 0);
-            layout.Controls.Add(buttonPanel, 0, 5);
-            layout.SetColumnSpan(buttonPanel, 2);
-
-            btnOk.Click += (s, e) =>
-            {
-                if (string.IsNullOrWhiteSpace(txtProp.Text))
-                {
-                    MessageBox.Show(form,
-                        "请填写属性名，例如：名称、System Path。",
-                        "属性名不能为空",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-                    form.DialogResult = DialogResult.None;
-                    txtProp.Focus();
+                    layout.RowCount += 1;
+                    layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                    layout.Controls.Add(control, 0, layout.RowCount - 1);
                 }
-            };
 
-            form.Controls.Add(layout);
-            form.AcceptButton = btnOk;
-            form.CancelButton = btnCancel;
+                // 字段：标签在上、输入框在下、灰色辅助说明在输入框之下。
+                TextBox AddTextField(string label, string hint, string placeholder, string text)
+                {
+                    AddRow(new Label
+                    {
+                        Text = label,
+                        Font = UiTheme.BodyStrongFont,
+                        ForeColor = UiTheme.Text,
+                        AutoSize = true,
+                        Margin = new Padding(0, layout.RowCount == 0 ? 0 : ScaleLogical(12), 0, ScaleLogical(4)),
+                    });
+                    var box = new TextBox
+                    {
+                        Text = text,
+                        Anchor = AnchorStyles.Left | AnchorStyles.Right,
+                        Margin = new Padding(0),
+                    };
+                    UiTheme.SetPlaceholder(box, placeholder);
+                    AddRow(box);
+                    AddRow(MakeFieldHint(hint));
+                    return box;
+                }
 
-            var result = form.ShowDialog();
-            if (result == DialogResult.OK)
-            {
-                category = txtCat.Text;
-                property = txtProp.Text;
-                test = cmbTest.SelectedItem?.ToString() ?? "equals";
-                value = txtVal.Text;
+                TextBox txtCat = AddTextField("分类（可选）",
+                    "属性所在的分组/选项卡名称；不确定可留空，插件会自动识别。",
+                    "例如 Item、Element、SmartPlant 3D", category);
+                TextBox txtProp = AddTextField("属性名（必填）",
+                    "必须与属性面板左侧名称完全一致，含空格与大小写。",
+                    "例如 名称、System Path、Tag", property);
+
+                AddRow(new Label
+                {
+                    Text = "匹配方式",
+                    Font = UiTheme.BodyStrongFont,
+                    ForeColor = UiTheme.Text,
+                    AutoSize = true,
+                    Margin = new Padding(0, ScaleLogical(12), 0, ScaleLogical(4)),
+                });
+                var rdoEquals = new RadioButton
+                {
+                    Text = "equals · 完全相同（编号、名称）",
+                    AutoSize = true,
+                    Margin = new Padding(0, 0, ScaleLogical(24), 0),
+                };
+                var rdoContains = new RadioButton
+                {
+                    Text = "contains · 包含这段文字（路径、描述）",
+                    AutoSize = true,
+                    Margin = new Padding(0),
+                };
+                bool isContains = string.Equals(test, "contains", StringComparison.OrdinalIgnoreCase);
+                rdoEquals.Checked = !isContains;
+                rdoContains.Checked = isContains;
+                var testRow = new FlowLayoutPanel
+                {
+                    AutoSize = true,
+                    WrapContents = false,
+                    Margin = new Padding(0),
+                    Padding = new Padding(0),
+                };
+                testRow.Controls.Add(rdoEquals);
+                testRow.Controls.Add(rdoContains);
+                AddRow(testRow);
+
+                TextBox txtVal = AddTextField("查询值",
+                    "属性面板右侧要找的值；前后不要留多余空格。",
+                    "例如 M14-101、P-001", value);
+
+                form.Content.Controls.Add(layout);
+
+                ThemedButton btnOk = form.AddButton("确定", ButtonKind.Primary, DialogResult.OK);
+                ThemedButton btnCancel = form.AddButton("取消", ButtonKind.Secondary, DialogResult.Cancel);
+                btnOk.Click += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(txtProp.Text))
+                    {
+                        MessageBox.Show(form,
+                            "请填写属性名，例如：名称、System Path。",
+                            "属性名不能为空",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                        form.DialogResult = DialogResult.None;
+                        txtProp.Focus();
+                    }
+                };
+                form.AcceptButton = btnOk;
+                form.CancelButton = btnCancel;
+                form.Shown += (s, e) =>
+                {
+                    TextBox first = string.IsNullOrEmpty(txtProp.Text) ? txtProp : txtVal;
+                    first.Focus();
+                    first.SelectAll();
+                };
+
+                var result = form.ShowDialog();
+                if (result == DialogResult.OK)
+                {
+                    category = txtCat.Text;
+                    property = txtProp.Text;
+                    test = rdoContains.Checked ? "contains" : "equals";
+                    value = txtVal.Text;
+                }
+                return result;
             }
-            return result;
+        }
+
+        private static Label MakeFieldHint(string text)
+        {
+            return new Label
+            {
+                Text = text,
+                AutoSize = true,
+                ForeColor = UiTheme.TextMuted,
+                Margin = new Padding(0, ScaleLogical(4), 0, 0),
+            };
         }
 
         private void ConditionsGrid_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
@@ -1614,7 +2309,8 @@ namespace JiePinPai.Navisworks
                     Test = test,
                     Value = val,
                 };
-                RefreshConditionsGrid();
+                _conditionsDirty = true;
+                RefreshConditionsGrid(e.RowIndex);
                 InvalidateSearchResults("条件已修改，请重新执行搜索。");
             }
         }
@@ -1625,6 +2321,8 @@ namespace JiePinPai.Navisworks
 
         private void BtnImportXml_Click(object sender, EventArgs e)
         {
+            if (!ConfirmDiscardUnsavedConditions("导入会替换当前全部条件。"))
+                return;
             using (var dialog = new OpenFileDialog
             {
                 Title = "选择傑出品 XML 查找文件",
@@ -1650,17 +2348,31 @@ namespace JiePinPai.Navisworks
 
         private void BtnExportXml_Click(object sender, EventArgs e)
         {
+            PromptExportConditions();
+        }
+
+        /// <summary>弹出保存框导出条件；默认沿用已导入文件的目录与文件名。</summary>
+        private bool PromptExportConditions()
+        {
+            if (_conditions.Count == 0)
+            {
+                ShowToast("没有可导出的条件。");
+                return false;
+            }
             using (var dialog = new SaveFileDialog
             {
                 Title = "导出 XML 文件",
                 Filter = "XML 文件 (*.xml)|*.xml",
-                FileName = "搜索条件.xml",
+                FileName = string.IsNullOrEmpty(_currentXmlPath)
+                    ? "搜索条件.xml"
+                    : Path.GetFileName(_currentXmlPath),
+                InitialDirectory = string.IsNullOrEmpty(_currentXmlPath)
+                    ? string.Empty
+                    : Path.GetDirectoryName(_currentXmlPath),
             })
             {
-                if (dialog.ShowDialog(this) == DialogResult.OK)
-                {
-                    ExportConditionsToXml(dialog.FileName);
-                }
+                return dialog.ShowDialog(this) == DialogResult.OK
+                    && ExportConditionsToXml(dialog.FileName);
             }
         }
 
@@ -1669,231 +2381,266 @@ namespace JiePinPai.Navisworks
             ShowUsageGuideDialog();
         }
 
+        /// <summary>
+        /// 快捷键表：两列，每项为“按键小方块 + 说明”，一眼可扫到要找的键。
+        /// </summary>
+        private static Control BuildShortcutPanel()
+        {
+            var grid = new TableLayoutPanel
+            {
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 4,
+                BackColor = UiTheme.Surface,
+                Margin = new Padding(0, ScaleLogical(20), 0, 0),
+                Padding = new Padding(0),
+            };
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(170)));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            grid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+
+            var title = new Label
+            {
+                Text = "快捷键",
+                Font = UiTheme.BodyStrongFont,
+                ForeColor = UiTheme.TextMuted,
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, ScaleLogical(6)),
+            };
+            grid.Controls.Add(title, 0, 0);
+            grid.SetColumnSpan(title, 4);
+
+            var shortcuts = new[]
+            {
+                new[] { "Ctrl", "Enter", "执行搜索" },
+                new[] { "Enter", null, "编辑条件 / 定位结果" },
+                new[] { "Ctrl", "D", "复制选中条件" },
+                new[] { "Delete", null, "删除选中条件" },
+                new[] { "Alt", "↑ ↓", "调整条件顺序" },
+                new[] { "Esc", null, "清空结果搜索" },
+            };
+            for (int i = 0; i < shortcuts.Length; i++)
+            {
+                string[] item = shortcuts[i];
+                int row = 1 + i / 2;
+                int column = (i % 2) * 2;
+
+                var keys = new FlowLayoutPanel
+                {
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    WrapContents = false,
+                    BackColor = UiTheme.Surface,
+                    Margin = new Padding(0, ScaleLogical(4), ScaleLogical(8), ScaleLogical(4)),
+                    Padding = new Padding(0),
+                };
+                keys.Controls.Add(new KeyCap(item[0]) { Margin = new Padding(0) });
+                if (item[1] != null)
+                {
+                    keys.Controls.Add(new Label
+                    {
+                        Text = "+",
+                        AutoSize = true,
+                        ForeColor = UiTheme.TextDisabled,
+                        Margin = new Padding(ScaleLogical(1), ScaleLogical(2), ScaleLogical(1), 0),
+                    });
+                    keys.Controls.Add(new KeyCap(item[1]) { Margin = new Padding(0) });
+                }
+                grid.Controls.Add(keys, column, row);
+                grid.Controls.Add(new Label
+                {
+                    Text = item[2],
+                    AutoSize = true,
+                    ForeColor = UiTheme.TextBody,
+                    Anchor = AnchorStyles.Left,
+                    Margin = new Padding(0, 0, ScaleLogical(16), 0),
+                }, column + 1, row);
+            }
+
+            var tip = new Label
+            {
+                Text = "切到结果页可直接输入编号搜索；在表格上单击右键可查看更多操作。",
+                AutoSize = true,
+                ForeColor = UiTheme.TextMuted,
+                Margin = new Padding(0, ScaleLogical(8), 0, 0),
+            };
+            int tipRow = 1 + (shortcuts.Length + 1) / 2;
+            grid.Controls.Add(tip, 0, tipRow);
+            grid.SetColumnSpan(tip, 4);
+            return grid;
+        }
+
         private void ShowUsageGuideDialog()
         {
-            var bodyFont = new Font("Microsoft YaHei UI", 10F);
-            var boldFont = new Font(bodyFont, FontStyle.Bold);
-            var titleFont = new Font(bodyFont.FontFamily, 14F, FontStyle.Bold);
-            var contentPad = ScaleLogical(22);
-
-            var form = new Form
+            using (var form = new ThemedDialog(
+                "使用说明 — Curi",
+                new Size(ScaleLogical(600), ScaleLogical(560))))
             {
-                Text = "使用说明 — 傑出品 Navisworks 查找插件",
-                ClientSize = new Size(ScaleLogical(780), ScaleLogical(600)),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterParent,
-                MaximizeBox = false,
-                MinimizeBox = false,
-                ShowInTaskbar = false,
-                BackColor = System.Drawing.Color.FromArgb(245, 247, 250),
-                Font = bodyFont,
-            };
-            form.Disposed += (s, e) =>
-            {
-                boldFont.Dispose();
-                titleFont.Dispose();
-                bodyFont.Dispose();
-            };
+                form.SetHeading("四步完成查找", null);
+                form.Content.Padding = new Padding(ScaleLogical(24), ScaleLogical(16), ScaleLogical(24), ScaleLogical(20));
 
-            // RichTextBox：单控件承载全部文本，仅格式化标题/正文两级
-            var rtb = new RichTextBox
-            {
-                ReadOnly = true,
-                BorderStyle = BorderStyle.None,
-                BackColor = System.Drawing.Color.White,
-                Font = bodyFont,
-                ForeColor = System.Drawing.Color.FromArgb(30, 41, 59),
-                DetectUrls = false,
-                ScrollBars = RichTextBoxScrollBars.Vertical,
-                WordWrap = true,
-                Multiline = true,
-            };
-
-            void H(string text)
-            {
-                int start = rtb.TextLength;
-                rtb.AppendText(text + "\n");
-                rtb.Select(start, text.Length);
-                rtb.SelectionFont = boldFont;
-            }
-            void T(string text)
-            {
-                int start = rtb.TextLength;
-                rtb.AppendText(text + "\n");
-                rtb.Select(start, text.Length);
-                rtb.SelectionFont = rtb.Font;
-            }
-            void G() => rtb.AppendText("\n");
-
-            // ── 构建内容 ──
-            {
-                int start = rtb.TextLength;
-                rtb.AppendText("傑出品 Navisworks 查找插件 — 使用说明\n");
-                rtb.Select(start, rtb.TextLength - start - 1);
-                rtb.SelectionFont = titleFont;
-            }
-            G();
-
-            H("▎插件简介");
-            T("「傑出品查找」用于在 Navisworks 三维模型中按属性值搜索对象。");
-            T("支持导入 XML 查找文件或手动填写条件，可执行精确匹配（equals）和模糊匹配（contains）。");
-            T("核心流程：搜索 → 选中 → 隐藏未选中 / 创建选择集 / 导出结果。");
-            G();
-
-            H("━━━ 操作步骤 ━━━");
-            G();
-
-            H("第一步：打开模型并选择搜索范围");
-            T("1. 在 Navisworks 中打开模型（.nwd / .nwf / .nwc）。");
-            T("2. 在左侧「选择树」中单击选中要搜索的模型节点");
-            T("   （通常是以 TS-MXXXX-... 开头的根节点，代表一个模型）。");
-            T("3. 如需只搜索某个子系统，选中对应的子节点即可。");
-            T("4. 不选范围时点击搜索会提示你选择。");
-            G();
-
-            H("第二步：准备搜索条件（两种方式）");
-            T("");
-            T("  · 推荐：点击「导入」选择 Python 工具生成的 .xml 查找文件，条件自动填入；");
-            T("    双击表格行可修改任一条件。");
-            T("  · 手动添加：先在模型中选中目标对象，在 Navisworks「属性」窗口读出");
-            T("    属性名和值，点击「添加」照抄即可（分类留空会自动识别；");
-            T("    匹配方式如何选见文末常见问题）。");
-            T("  · 注意区分：工具栏「导出」= 把条件存成 XML（下次可再导入）；");
-            T("    搜索完成后的「导出结果」按钮 = 导出匹配对象清单（CSV/TXT）。");
-            G();
-
-            H("第三步：选择搜索模式（切换到「选项」页）");
-            T("");
-            T("  【模式 A：仅查找并选中】（默认）");
-            T("  搜索后选中匹配对象，不做隐藏。适合快速定位查看。");
-            T("");
-            T("  【模式 B：查找 + 隐藏未选中】");
-            T("  搜索并选中后弹窗确认，确认后隐藏不相关的对象，只保留匹配项和 STR 结构节点。");
-            T("  任一条件未找到、重复或条件异常时会暂停隐藏并显示警告，可返回检查或明确选择继续。");
-            T("  重复项默认不计入；在结果页勾选“计入匹配”后，才会进入总数和后续操作。");
-            T("  选择继续时只保留计入匹配的对象；同一对象无论被多少条件命中都只保留一份。");
-            T("");
-            T("  【诊断日志（默认关闭）】勾选后每次搜索输出详细诊断文件。日常无需开启，排查问题时使用。");
-            G();
-
-            H("第四步：执行搜索");
-            T("确认条件表格不为空、选择树中已选中范围 → 点击底部蓝色「执行搜索」按钮。");
-            T("大模型可能需数秒。搜索期间界面会暂时锁定，全部操作完成后自动切换到「结果」页。");
-            G();
-
-            H("第五步：查看结果与后续操作");
-            T("");
-            T("  【结果摘要】显示四种条件状态、匹配对象总数，以及重复项是否计入。");
-            T("  【选择】只控制结果导出；【计入匹配】控制重复项是否进入总数和后续操作。");
-            T("  【详细列表】双击重复结果会定位并聚焦，查看后点击“还原全部选择”。");
-            T("  “勾选”只决定导出哪些条件，不会改变 Navisworks 当前模型选择。");
-            T("");
-            T("  搜索完成后，底部按钮启用：");
-            T("  · 导出结果 → 可选择导出已勾选、当前筛选或全部结果，保存为 CSV/TXT 文件。");
-            T("    点击“勾选”表头可勾选或取消当前筛选下的全部结果，切换筛选后已有勾选仍保留。");
-            T("  · 创建选择集 → 将匹配对象持久化为 Navisworks「集合」面板中的选择集。");
-            T("    右键该选择集 →「选择」后可批量修改颜色、透明度、隐藏等属性。");
-            T("    选择集会随 .nwf 文件保存，关闭插件后仍可使用。");
-            T("  · 隐藏未选中 → 使用最近一次有效搜索结果单独执行隐藏，模式 A 搜索后也可使用。");
-            T("    问题结果会再次显示“仍然继续隐藏 / 返回检查”；结果失效或总匹配为 0 时按钮不可用。");
-            T("    最终保留集合为空、STR 风险或实际选择不一致等保护不会被唯一性覆盖确认绕过。");
-            G();
-
-            H("━━━ 常见问题 ━━━");
-            G();
-
-            H("Q: 搜索不到任何对象？");
-            T("A: 检查属性名是否与 Navisworks 属性面板完全一致（含空格、大小写）。");
-            T("   确认查询值前后无多余空格、搜索范围正确。可开启诊断日志排查。");
-            G();
-
-            H("Q: 为什么有的条件显示「重复」？");
-            T("A: 插件要求每条条件唯一对应一个对象，两种情况会标记重复：");
-            T("   1）一条条件匹配到多个对象——可收窄查询值或细化条件；");
-            T("   2）匹配到的对象已被靠前的条件唯一命中——同一对象只归属第一条命中它的条件。");
-            T("   重复项默认不计入总数，可在结果页逐条勾选「计入匹配」后纳入。");
-            G();
-
-            H("Q: 分类（Category）要不要填？");
-            T("A: 可不填，插件会自动扫描模型发现分类。模型很大且属性名在多个分类都存在时，手动填写可提高准确性。");
-            G();
-
-            H("Q: equals 和 contains 怎么选？");
-            T("A: equals = 完全相等（适合编号/名称）；contains = 包含即可（适合路径/描述中的关键词）。");
-            G();
-
-            H("Q: 隐藏错了怎么恢复？");
-            T("A: Navisworks「常用」选项卡 →「全部显示」。建议隐藏前先用模式 A 确认搜索结果。");
-
-            // 内容构建完毕后滚动回顶部（AppendText 会把光标推到末尾）
-            rtb.SelectionStart = 0;
-            rtb.SelectionLength = 0;
-            rtb.ScrollToCaret();
-
-            // ── 用 Panel 包裹 RichTextBox → 提供可见边界 + 内边距 ──
-            var contentCard = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = System.Drawing.Color.White,
-                BorderStyle = BorderStyle.FixedSingle,
-                Padding = new Padding(contentPad),
-                Margin = new Padding(0),
-            };
-            contentCard.Controls.Add(rtb);
-            rtb.Dock = DockStyle.Fill;
-
-            // ── 关闭按钮 ──
-            var btnFont = new Font(bodyFont, FontStyle.Bold);
-            var btnClose = new Button
-            {
-                Text = "关闭",
-                FlatStyle = FlatStyle.Flat,
-                FlatAppearance =
+                var layout = new TableLayoutPanel
                 {
-                    BorderColor = System.Drawing.Color.FromArgb(203, 213, 225),
-                    BorderSize = 1,
-                    MouseOverBackColor = System.Drawing.Color.FromArgb(248, 250, 252),
-                },
-                BackColor = System.Drawing.Color.White,
-                ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
-                Font = btnFont,
-                UseVisualStyleBackColor = false,
-                Size = new Size(ScaleLogical(110), CalculateButtonHeight(btnFont) + ScaleLogical(8)),
-                DialogResult = DialogResult.OK,
-            };
+                    Dock = DockStyle.Top,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    ColumnCount = 2,
+                    BackColor = UiTheme.Surface,
+                    Padding = new Padding(0),
+                    Margin = new Padding(0),
+                };
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                int contentWidth = form.ClientSize.Width - ScaleLogical(48);
+                int badgeSize = ScaleLogical(24);
+                int badgeGap = ScaleLogical(12);
+                // 标题行与序号圆点按中线对齐。
+                int titleOffset = Math.Max(0, (badgeSize - UiTheme.TextHeight(UiTheme.BodyStrongFont)) / 2);
 
-            // ── 布局：内容卡片在上，按钮在右下 ──
-            var layout = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                Padding = new Padding(ScaleLogical(14)),
-                ColumnCount = 1,
-                RowCount = 2,
-                BackColor = form.BackColor,
-            };
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, btnClose.Height + ScaleLogical(20)));
+                // 文案约定：全角括号不出现在行首或冒号后，避免视觉缩进；长说明手动分行。
+                void AddStep(int number, string title, string detail)
+                {
+                    int row = layout.RowCount++;
+                    layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                    int top = row == 0 ? 0 : ScaleLogical(18);
+                    layout.Controls.Add(new StepBadge(number)
+                    {
+                        Margin = new Padding(0, top, badgeGap, 0),
+                    }, 0, row);
 
-            var buttonRow = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
-                RowCount = 1,
-                BackColor = form.BackColor,
-            };
-            buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            buttonRow.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, btnClose.Width));
-            buttonRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            buttonRow.Controls.Add(btnClose, 1, 0);
-            btnClose.Anchor = AnchorStyles.Right;
+                    var text = new TableLayoutPanel
+                    {
+                        AutoSize = true,
+                        AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                        ColumnCount = 1,
+                        Margin = new Padding(0, top + titleOffset, 0, 0),
+                        Padding = new Padding(0),
+                    };
+                    text.Controls.Add(new Label
+                    {
+                        Text = title,
+                        Font = UiTheme.BodyStrongFont,
+                        ForeColor = UiTheme.Text,
+                        AutoSize = true,
+                        Margin = new Padding(0),
+                    }, 0, 0);
+                    text.Controls.Add(new Label
+                    {
+                        Text = detail,
+                        ForeColor = UiTheme.TextMuted,
+                        AutoSize = true,
+                        MaximumSize = new Size(contentWidth - badgeSize - badgeGap, 0),
+                        Margin = new Padding(0, ScaleLogical(4), 0, 0),
+                    }, 0, 1);
+                    layout.Controls.Add(text, 1, row);
+                }
 
-            layout.Controls.Add(contentCard, 0, 0);
-            layout.Controls.Add(buttonRow, 0, 1);
-            form.Controls.Add(layout);
-            form.AcceptButton = btnClose;
-            form.CancelButton = btnClose;
-            form.Shown += (s, e) => btnClose.Focus();
-            form.ShowDialog(this);
+                AddStep(1, "在选择树中选中要搜索的模型节点",
+                    "通常是 TS-M 开头的根节点。插件只在选中范围内查找。");
+                AddStep(2, "导入 XML，或手动添加条件",
+                    "也可把 XML 文件直接拖进窗口。双击任一行可修改，属性名须与属性窗口中的写法一致。");
+                AddStep(3, "点击底部的执行搜索",
+                    "默认仅选中匹配对象；旁边的模式按钮可切换为选中并隐藏。完成后自动切到结果页。");
+                AddStep(4, "在结果页检查，再决定下一步",
+                    "右上角可搜索编号快速找到某条，双击即在模型中定位；没找到的条件双击可直接修改。\n" +
+                    "确认无误后，可创建选择集、隐藏未选中，或导出结果。");
+
+                // 遇到问题：问题加粗为重点，解法常规字；行间细分隔线。
+                var faq = new TableLayoutPanel
+                {
+                    Dock = DockStyle.Fill,
+                    AutoSize = true,
+                    AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                    ColumnCount = 2,
+                    BackColor = UiTheme.SurfaceMuted,
+                    Padding = new Padding(ScaleLogical(16), ScaleLogical(12), ScaleLogical(16), ScaleLogical(4)),
+                    Margin = new Padding(0, ScaleLogical(28), 0, 0),
+                };
+                faq.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(140)));
+                faq.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+                int fixWidth = contentWidth - faq.Padding.Horizontal - ScaleLogical(140);
+
+                var faqTitle = new Label
+                {
+                    Text = "遇到问题",
+                    Font = UiTheme.BodyStrongFont,
+                    ForeColor = UiTheme.TextMuted,
+                    AutoSize = true,
+                    Margin = new Padding(0, 0, 0, ScaleLogical(6)),
+                };
+                faq.Controls.Add(faqTitle, 0, 0);
+                faq.SetColumnSpan(faqTitle, 2);
+                faq.RowCount = 1;
+
+                void AddFaq(string problem, string fix)
+                {
+                    if (faq.RowCount > 1)
+                    {
+                        var separator = new Panel
+                        {
+                            Height = 1,
+                            Dock = DockStyle.Fill,
+                            BackColor = UiTheme.Border,
+                            Margin = new Padding(0),
+                        };
+                        faq.Controls.Add(separator, 0, faq.RowCount);
+                        faq.SetColumnSpan(separator, 2);
+                        faq.RowCount++;
+                    }
+
+                    int row = faq.RowCount++;
+                    var rowPadding = new Padding(0, ScaleLogical(9), 0, ScaleLogical(9));
+                    faq.Controls.Add(new Label
+                    {
+                        Text = problem,
+                        Font = UiTheme.BodyStrongFont,
+                        ForeColor = UiTheme.Text,
+                        AutoSize = true,
+                        Margin = rowPadding,
+                    }, 0, row);
+                    faq.Controls.Add(new Label
+                    {
+                        Text = fix,
+                        ForeColor = UiTheme.TextBody,
+                        AutoSize = true,
+                        MaximumSize = new Size(fixWidth, 0),
+                        Margin = rowPadding,
+                    }, 1, row);
+                }
+
+                AddFaq("什么都没找到", "核对属性名的空格与大小写，以及搜索范围是否选对。");
+                AddFaq("结果显示重复", "一个条件命中了多个对象。收窄查询值，或勾选计入匹配。");
+                AddFaq("equals 还是 contains", "编号、名称用 equals；路径、描述里的关键词用 contains。");
+                AddFaq("隐藏错了", "在 Navisworks 常用选项卡点击全部显示，即可恢复。");
+
+                int faqRow = layout.RowCount++;
+                layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                layout.Controls.Add(faq, 0, faqRow);
+                layout.SetColumnSpan(faq, 2);
+
+                int keysRow = layout.RowCount++;
+                layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                Control keys = BuildShortcutPanel();
+                layout.Controls.Add(keys, 0, keysRow);
+                layout.SetColumnSpan(keys, 2);
+
+                form.Content.Controls.Add(layout);
+
+                // 高度随内容收缩，避免底部大片留白。
+                form.Load += (s, e) =>
+                {
+                    int needed = layout.GetPreferredSize(new Size(form.Content.DisplayRectangle.Width, 0)).Height
+                        + form.Content.Padding.Vertical;
+                    form.Height += needed - form.Content.Height;
+                };
+
+                ThemedButton btnClose = form.AddButton("开始使用", ButtonKind.Primary, DialogResult.OK);
+                form.AcceptButton = btnClose;
+                form.CancelButton = btnClose;
+                form.Shown += (s, e) => btnClose.Focus();
+                form.ShowDialog(this);
+            }
         }
 
         private void BtnAddCondition_Click(object sender, EventArgs e)
@@ -1909,23 +2656,109 @@ namespace JiePinPai.Navisworks
                     Test = test,
                     Value = val,
                 });
-                RefreshConditionsGrid();
+                _conditionsDirty = true;
+                RefreshConditionsGrid(_conditions.Count - 1);
                 InvalidateSearchResults("已添加搜索条件，请重新执行搜索。");
             }
         }
 
         private void BtnDeleteCondition_Click(object sender, EventArgs e)
         {
-            if (_conditionsGrid.SelectedRows.Count > 0)
+            List<int> indices = GetSelectedConditionIndices();
+            if (indices.Count == 0)
             {
-                int idx = _conditionsGrid.SelectedRows[0].Index;
-                if (idx >= 0 && idx < _conditions.Count)
-                {
-                    _conditions.RemoveAt(idx);
-                    RefreshConditionsGrid();
-                    InvalidateSearchResults("已删除搜索条件，请重新执行搜索。");
-                }
+                ShowToast("先在表格中选中要删除的条件。");
+                return;
             }
+            if (indices.Count > 1 && MessageBox.Show(this,
+                    $"确定删除选中的 {indices.Count} 条条件吗？",
+                    "Curi · 删除条件",
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button2) != DialogResult.OK)
+                return;
+
+            foreach (int index in indices.OrderByDescending(i => i))
+                _conditions.RemoveAt(index);
+            _conditionsDirty = true;
+            RefreshConditionsGrid(Math.Min(indices.Min(), _conditions.Count - 1));
+            InvalidateSearchResults("已删除搜索条件，请重新执行搜索。");
+        }
+
+        private List<int> GetSelectedConditionIndices()
+        {
+            return _conditionsGrid.SelectedRows
+                .Cast<DataGridViewRow>()
+                .Select(row => row.Index)
+                .Where(index => index >= 0 && index < _conditions.Count)
+                .Distinct()
+                .OrderBy(index => index)
+                .ToList();
+        }
+
+        /// <summary>复制选中条件并插入到其后，便于只改查询值批量录入。</summary>
+        private void DuplicateSelectedConditions()
+        {
+            List<int> indices = GetSelectedConditionIndices();
+            if (indices.Count == 0)
+                return;
+            int insertAt = indices.Max() + 1;
+            List<SearchCondition> copies = indices.Select(i => CloneCondition(_conditions[i])).ToList();
+            _conditions.InsertRange(insertAt, copies);
+            _conditionsDirty = true;
+            RefreshConditionsGrid(insertAt, copies.Count);
+            InvalidateSearchResults("已复制搜索条件，请重新执行搜索。");
+        }
+
+        private void MoveSelectedCondition(int offset)
+        {
+            List<int> indices = GetSelectedConditionIndices();
+            if (indices.Count != 1)
+                return;
+            int from = indices[0];
+            int to = from + offset;
+            if (to < 0 || to >= _conditions.Count)
+                return;
+            SearchCondition item = _conditions[from];
+            _conditions.RemoveAt(from);
+            _conditions.Insert(to, item);
+            _conditionsDirty = true;
+            RefreshConditionsGrid(to);
+            InvalidateSearchResults("条件顺序已调整，请重新执行搜索。");
+        }
+
+        private static SearchCondition CloneCondition(SearchCondition source)
+        {
+            return new SearchCondition
+            {
+                CategoryInternal = source.CategoryInternal,
+                CategoryDisplay = source.CategoryDisplay,
+                PropertyInternal = source.PropertyInternal,
+                PropertyDisplay = source.PropertyDisplay,
+                Test = source.Test,
+                Value = source.Value,
+            };
+        }
+
+        private void EditSelectedCondition()
+        {
+            List<int> indices = GetSelectedConditionIndices();
+            if (indices.Count == 1)
+                ConditionsGrid_CellDoubleClick(_conditionsGrid,
+                    new DataGridViewCellEventArgs(COL_VALUE, indices[0]));
+        }
+
+        /// <summary>有未导出的手动修改时，替换前确认。</summary>
+        private bool ConfirmDiscardUnsavedConditions(string action)
+        {
+            if (!_conditionsDirty || _conditions.Count == 0)
+                return true;
+            return MessageBox.Show(this,
+                    action + $"\n当前 {_conditions.Count} 条条件有未导出的修改，将会丢失。\n\n仍要继续吗？",
+                    "Curi · 未导出的修改",
+                    MessageBoxButtons.OKCancel,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button2) == DialogResult.OK;
         }
 
         #endregion
@@ -1934,17 +2767,19 @@ namespace JiePinPai.Navisworks
 
         private void SetSearchBusy(bool busy)
         {
+            _btnTrayMeasurement.Enabled = !busy;
             Cursor = busy ? Cursors.WaitCursor : Cursors.Default;
             UseWaitCursor = busy;
             _btnSearch.Enabled = !busy;
             _btnSearch.Text = busy ? "正在搜索..." : "执行搜索";
             _tabControl.Enabled = !busy;
             _btnClose.Enabled = !busy;
+            _btnMode.Enabled = !busy;
         }
 
         private void ActivateResultsTab()
         {
-            _tabControl.SelectedTab = _tabResults;
+            SwitchTab(_tabResults);
             _tabResults.PerformLayout();
             _tabResults.Invalidate(true);
             _tabControl.Update();
@@ -1956,7 +2791,7 @@ namespace JiePinPai.Navisworks
             {
                 MessageBox.Show(this, "请先添加至少一个搜索条件。",
                     "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                _tabControl.SelectedTab = _tabConditions;
+                SwitchTab(_tabConditions);
                 return;
             }
 
@@ -1996,10 +2831,11 @@ namespace JiePinPai.Navisworks
                         null,
                         null);
                     MessageBox.Show(this,
-                        "请先在选择树中选中本次搜索范围。",
-                        "傑出品·搜索范围",
+                        "还没有选择搜索范围。\n\n请先在 Navisworks 左侧选择树中单击要搜索的模型节点" +
+                        "（通常是 TS-M 开头的根节点），再点执行搜索。",
+                        "Curi · 搜索范围",
                         MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                        MessageBoxIcon.Information);
                     return;
                 }
 
@@ -2013,8 +2849,9 @@ namespace JiePinPai.Navisworks
                         null,
                         null);
                     MessageBox.Show(this,
-                        "无法从当前选择范围识别模型前缀，请检查选择树节点名称。",
-                        "傑出品·模型前缀",
+                        "选中的节点名称里没有识别到模型前缀（如 TS-M12-）。\n\n" +
+                        "请在选择树中改选模型的根节点，而不是其中的某个构件。",
+                        "Curi · 模型前缀",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
                     return;
@@ -2193,6 +3030,7 @@ namespace JiePinPai.Navisworks
             _btnHideUnselected.Text = busy ? "正在隐藏..." : "隐藏未选中";
             _tabControl.Enabled = !busy;
             _btnClose.Enabled = !busy;
+            _btnMode.Enabled = !busy;
         }
 
         private bool ExecuteCachedResultAction(
@@ -2409,18 +3247,10 @@ namespace JiePinPai.Navisworks
 
             if (selectOnly)
             {
-                string message =
-                    "【模式 A：仅查找并选中】\n\n" +
-                    $"计入匹配对象：{_lastMatchedItemsInScope.Count} 个\n" +
-                    $"当前模型 STR 保留对象：{protectedKeepResult.ProtectedItems.Count} 个\n" +
-                    $"最终保留对象：{finalKeepItems.Count} 个\n\n" +
-                    "插件已选中最终保留对象，未执行隐藏。";
-                MessageBox.Show(
-                    this,
-                    message,
-                    "傑出品·模式 A",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                // 仅选中模式的正常完成不再弹窗打断，用浮动提示反馈。
+                ShowToast(
+                    $"已选中 {finalKeepItems.Count} 个对象（匹配 {_lastMatchedItemsInScope.Count}，" +
+                    $"STR 保留 {protectedKeepResult.ProtectedItems.Count}），未执行隐藏。");
                 return false;
             }
 
@@ -2507,41 +3337,43 @@ namespace JiePinPai.Navisworks
                 result => result.Status == SearchResultStatus.ConditionInvalid);
             bool canContinue = totalMatched > 0;
 
-            using (var form = new Form
+            using (var form = new ThemedDialog(
+                "傑出品·唯一性校验未通过",
+                new Size(ScaleLogical(600), ScaleLogical(360))))
             {
-                Text = "傑出品·唯一性校验未通过",
-                ClientSize = new Size(ScaleLogical(640), ScaleLogical(330)),
-                MinimumSize = new Size(ScaleLogical(560), ScaleLogical(300)),
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                StartPosition = FormStartPosition.CenterParent,
-                MaximizeBox = false,
-                MinimizeBox = false,
-                ShowIcon = false,
-                Font = new Font("Microsoft YaHei UI", 9F),
-                BackColor = System.Drawing.Color.FromArgb(248, 250, 252),
-            })
-            {
-                var root = new TableLayoutPanel
+                form.SetHeading(
+                    "发现问题，已暂停隐藏",
+                    "部分条件未能唯一匹配对象，请确认是否仍要继续隐藏。",
+                    danger: true);
+
+                var layout = new TableLayoutPanel
                 {
                     Dock = DockStyle.Fill,
                     ColumnCount = 1,
-                    RowCount = 3,
-                    Padding = new Padding(ScaleLogical(18)),
+                    BackColor = UiTheme.Surface,
+                    Padding = new Padding(0),
                 };
-                root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-                root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(58)));
-                root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-                root.RowStyles.Add(new RowStyle(SizeType.Absolute, ScaleLogical(62)));
+                layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
-                var title = new Label
+                // 三项计数以状态色标签并排展示。
+                var counts = new FlowLayoutPanel
                 {
-                    Text = "发现问题，已暂停隐藏",
-                    Dock = DockStyle.Fill,
-                    TextAlign = ContentAlignment.MiddleLeft,
-                    Font = new Font("Microsoft YaHei UI", 11F, FontStyle.Bold),
-                    ForeColor = System.Drawing.Color.FromArgb(153, 27, 27),
-                    BackColor = System.Drawing.Color.FromArgb(254, 242, 242),
-                    Padding = new Padding(ScaleLogical(14), 0, 0, 0),
+                    AutoSize = true,
+                    WrapContents = false,
+                    Margin = new Padding(0, 0, 0, ScaleLogical(12)),
+                    Padding = new Padding(0),
+                };
+                counts.Controls.Add(MakeCountChip("未找到", notFoundCount, SearchResultStatus.NotFound));
+                counts.Controls.Add(MakeCountChip("重复", duplicateCount, SearchResultStatus.Duplicate));
+                counts.Controls.Add(MakeCountChip("条件异常", invalidCount, SearchResultStatus.ConditionInvalid));
+
+                var matched = new Label
+                {
+                    Text = $"当前计入匹配的对象：{totalMatched} 个（按对象去重）",
+                    Font = UiTheme.BodyStrongFont,
+                    ForeColor = UiTheme.Text,
+                    AutoSize = true,
+                    Margin = new Padding(0, 0, 0, ScaleLogical(8)),
                 };
 
                 string continueNote = canContinue
@@ -2550,69 +3382,43 @@ namespace JiePinPai.Navisworks
                     : "当前没有任何匹配对象，不能继续隐藏，防止隐藏整个模型。";
                 var details = new Label
                 {
-                    Text =
-                        $"未找到：{notFoundCount} 条    重复：{duplicateCount} 条    " +
-                        $"条件异常：{invalidCount} 条\n\n" +
-                        $"当前计入匹配的对象：{totalMatched} 个（按对象去重）\n\n" +
-                        continueNote +
-                        (inspectionSelectionNote ?? string.Empty),
-                    Dock = DockStyle.Fill,
-                    TextAlign = ContentAlignment.TopLeft,
-                    Padding = new Padding(ScaleLogical(4), ScaleLogical(16), ScaleLogical(4), 0),
-                    ForeColor = System.Drawing.Color.FromArgb(51, 65, 85),
+                    Text = continueNote + (inspectionSelectionNote ?? string.Empty),
+                    AutoSize = true,
+                    MaximumSize = new Size(form.ClientSize.Width - ScaleLogical(48), 0),
+                    ForeColor = canContinue ? UiTheme.TextBody : UiTheme.DangerText,
+                    Margin = new Padding(0),
                 };
 
-                var buttonLayout = new TableLayoutPanel
-                {
-                    Dock = DockStyle.Fill,
-                    ColumnCount = 4,
-                    RowCount = 1,
-                    Padding = new Padding(0, ScaleLogical(12), 0, 0),
-                };
-                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(156)));
-                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(12)));
-                buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, ScaleLogical(120)));
+                layout.Controls.Add(counts, 0, 0);
+                layout.Controls.Add(matched, 0, 1);
+                layout.Controls.Add(details, 0, 2);
+                form.Content.Controls.Add(layout);
 
-                var btnContinue = new Button
-                {
-                    Text = "仍然继续隐藏",
-                    Dock = DockStyle.Fill,
-                    DialogResult = DialogResult.Yes,
-                    Enabled = canContinue,
-                    FlatStyle = FlatStyle.Flat,
-                    BackColor = System.Drawing.Color.FromArgb(220, 38, 38),
-                    ForeColor = System.Drawing.Color.White,
-                    Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-                    UseVisualStyleBackColor = false,
-                };
-                btnContinue.FlatAppearance.BorderSize = 0;
-
-                var btnReturn = new Button
-                {
-                    Text = "返回检查",
-                    Dock = DockStyle.Fill,
-                    DialogResult = DialogResult.Cancel,
-                    FlatStyle = FlatStyle.Flat,
-                    BackColor = System.Drawing.Color.FromArgb(37, 99, 235),
-                    ForeColor = System.Drawing.Color.White,
-                    Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
-                    UseVisualStyleBackColor = false,
-                };
-                btnReturn.FlatAppearance.BorderSize = 0;
-
-                buttonLayout.Controls.Add(btnContinue, 1, 0);
-                buttonLayout.Controls.Add(btnReturn, 3, 0);
-                root.Controls.Add(title, 0, 0);
-                root.Controls.Add(details, 0, 1);
-                root.Controls.Add(buttonLayout, 0, 2);
-                form.Controls.Add(root);
+                // 安全选项为默认主按钮；危险的“继续”放在左侧并使用危险样式。
+                ThemedButton btnReturn = form.AddButton("返回检查", ButtonKind.Primary, DialogResult.Cancel);
+                ThemedButton btnContinue = form.AddButton("仍然继续隐藏", ButtonKind.Danger, DialogResult.Yes);
+                btnContinue.Enabled = canContinue;
                 form.AcceptButton = btnReturn;
                 form.CancelButton = btnReturn;
                 form.Shown += (sender, args) => btnReturn.Select();
 
                 return form.ShowDialog(this) == DialogResult.Yes;
             }
+        }
+
+        private static Control MakeCountChip(string label, int count, SearchResultStatus status)
+        {
+            UiTheme.GetStatusColors(status, out Color back, out Color fore);
+            return new Label
+            {
+                Text = $"{label}  {count}",
+                AutoSize = true,
+                Font = UiTheme.BodyStrongFont,
+                BackColor = count > 0 ? back : UiTheme.HeaderBack,
+                ForeColor = count > 0 ? fore : UiTheme.TextMuted,
+                Padding = new Padding(ScaleLogical(10), ScaleLogical(4), ScaleLogical(10), ScaleLogical(4)),
+                Margin = new Padding(0, 0, ScaleLogical(8), 0),
+            };
         }
 
         private void UpdateHideButtonState()
@@ -2641,9 +3447,12 @@ namespace JiePinPai.Navisworks
                 return;
 
             _lastResults = results;
+            NotifyMeasurementSourceChanged();
             _lastTotalMatched = totalMatched;
             _lastHideExecuted = hideExecuted;
             ShowResults(results, totalMatched, scopeLabel);
+            UpdateResultChromeVisibility();
+            UpdateNavCaptions();
             _btnExportResults.Enabled = results.Count > 0;
             _btnCreateSelectionSet.Enabled = totalMatched > 0;
             UpdateHideButtonState();
@@ -2670,10 +3479,7 @@ namespace JiePinPai.Navisworks
             string scopeLabel)
         {
             results = results ?? Array.Empty<SearchResult>();
-            int found = results.Count(r => r.Status == SearchResultStatus.Found);
-            int notFound = results.Count(r => r.Status == SearchResultStatus.NotFound);
             int duplicate = results.Count(r => r.Status == SearchResultStatus.Duplicate);
-            int invalid = results.Count(r => r.Status == SearchResultStatus.ConditionInvalid);
             int includedDuplicate = results.Count(r =>
                 r.Status == SearchResultStatus.Duplicate
                 && r.Condition != null
@@ -2687,10 +3493,9 @@ namespace JiePinPai.Navisworks
             else
                 duplicateContribution = $"已计入 {includedDuplicate} 条重复项，按对象去重";
 
+            // 各状态计数已显示在筛选按钮上，摘要只给范围与最终匹配对象数。
             _lblResultSummary.Text =
-                $"范围：{scopeLabel}　　条件总数：{results.Count}　　" +
-                $"已找到：{found}　未找到：{notFound}　重复：{duplicate}　条件异常：{invalid}\n" +
-                $"匹配对象总数：{totalMatched} 个（{duplicateContribution}）";
+                $"{scopeLabel}　·　匹配对象 {totalMatched} 个　·　{duplicateContribution}";
         }
 
         #endregion
@@ -2703,9 +3508,17 @@ namespace JiePinPai.Navisworks
                 return;
 
             UpdateExportSelectionState();
-            _exportResultsMenu.Show(
-                _btnExportResults,
-                new Point(0, _btnExportResults.Height));
+            // 导出按钮在页脚右侧，面板右对齐，向上弹出。
+            TogglePicker(_btnExportResults, BuildExportPicker, alignRight: true, afterClose: index =>
+            {
+                ResultExportScope[] scopes =
+                {
+                    ResultExportScope.Checked,
+                    ResultExportScope.CurrentFilter,
+                    ResultExportScope.All,
+                };
+                ExportResults(scopes[index]);
+            });
         }
 
         private void ExportResults(ResultExportScope scope)
@@ -2880,7 +3693,7 @@ namespace JiePinPai.Navisworks
 
         #region 导出 XML
 
-        private void ExportConditionsToXml(string xmlPath)
+        private bool ExportConditionsToXml(string xmlPath)
         {
             try
             {
@@ -2898,13 +3711,17 @@ namespace JiePinPai.Navisworks
                     writer.WriteLine("  </findspec>");
                     writer.WriteLine("</exchange>");
                 }
-                MessageBox.Show(this, "导出 XML 成功！\n" + xmlPath,
-                    "完成", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                _currentXmlPath = xmlPath;
+                _conditionsDirty = false;
+                UpdateNavCaptions();
+                ShowToast($"已导出 {_conditions.Count} 条条件：{Path.GetFileName(xmlPath)}");
+                return true;
             }
             catch (Exception ex)
             {
                 MessageBox.Show(this, "导出失败：\n" + ex.Message,
                     "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
             }
         }
 
@@ -3059,16 +3876,85 @@ namespace JiePinPai.Navisworks
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
+            // 首次打开淡入；外部已设置透明度（如测试）时不干预。
+            if (Opacity >= 1)
+            {
+                _fadeInOnShow = true;
+                Opacity = 0;
+            }
             // 在首次绘制前定位，避免从默认位置跳到右上角的闪烁。
             PositionForModeless();
         }
 
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
+            DisposeMeasurementLink();
+            _toast?.Dispose();
+            _toolTip?.Dispose();
             // 仅在正常状态记录位置，避免最小化时的 -32000 哨兵坐标。
             if (this.WindowState == FormWindowState.Normal)
                 _lastLocation = this.Location;
             base.OnFormClosed(e);
+        }
+
+        /// <summary>
+        /// 手动添加或修改过、尚未导出的条件，关闭前提醒保存。
+        /// </summary>
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            if (!_fadeInOnShow)
+                return;
+            _fadeInOnShow = false;
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            UiAnimator.Run(() =>
+            {
+                if (IsDisposed)
+                    return false;
+                float t = UiAnimator.EaseOut((float)clock.Elapsed.TotalMilliseconds / 180f);
+                Opacity = t;
+                return t < 1f;
+            });
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs e)
+        {
+            if (e.CloseReason == CloseReason.UserClosing && _conditionsDirty && _conditions.Count > 0)
+            {
+                DialogResult answer = MessageBox.Show(this,
+                    $"有 {_conditions.Count} 条条件尚未导出为 XML，关闭后将丢失。\n\n是否先导出？",
+                    "Curi · 关闭",
+                    MessageBoxButtons.YesNoCancel,
+                    MessageBoxIcon.Question,
+                    MessageBoxDefaultButton.Button1);
+                if (answer == DialogResult.Cancel)
+                {
+                    e.Cancel = true;
+                    return;
+                }
+                if (answer == DialogResult.Yes && !PromptExportConditions())
+                {
+                    e.Cancel = true;
+                    return;
+                }
+            }
+            base.OnFormClosing(e);
+        }
+
+        /// <summary>
+        /// 全局快捷键只保留 Ctrl+Enter 搜索。Ctrl+O/S/N/F、F1 等会先被 Navisworks 自身的
+        /// 加速键截获（如 Ctrl+S 保存模型），插件不注册，避免误操作。
+        /// </summary>
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (_tabControl != null && _tabControl.Enabled
+                && keyData == (Keys.Control | Keys.Enter)
+                && _btnSearch.Enabled)
+            {
+                _btnSearch.PerformClick();
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
         }
 
         /// <summary>

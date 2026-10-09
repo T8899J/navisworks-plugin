@@ -21,5 +21,7 @@
     <Compile Include="..\..\ResultExportPolicy.cs" Link="Production\ResultExportPolicy.cs" />
     <Compile Include="..\..\DuplicateMatchInclusionPolicy.cs" Link="Production\DuplicateMatchInclusionPolicy.cs" />
     <Compile Include="..\..\OneToOneMatchPolicy.cs" Link="Production\OneToOneMatchPolicy.cs" />
+    <Compile Include="..\..\TrayMeasurement\MeasurementBatchPolicy.cs" Link="Production\MeasurementBatchPolicy.cs" />
+    <Compile Include="..\..\TrayMeasurement\Geometry.cs" Link="Production\Geometry.cs" />
   </ItemGroup>
 </Project>
